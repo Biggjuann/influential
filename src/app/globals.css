@@ -1,0 +1,12 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+html, body { background: #0a0a0b; color: #ededed; }
+body { font-feature-settings: "ss01", "cv01"; }
+
+::selection { background: #a855f733; }
+
+.scrollbar::-webkit-scrollbar { width: 8px; height: 8px; }
+.scrollbar::-webkit-scrollbar-thumb { background: #2a2a31; border-radius: 4px; }
+.scrollbar::-webkit-scrollbar-track { background: transparent; }

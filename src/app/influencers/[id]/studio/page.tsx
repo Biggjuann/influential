@@ -1,0 +1,54 @@
+import { notFound } from "next/navigation";
+import { db, schema } from "@/lib/db";
+import { eq } from "drizzle-orm";
+import { StudioClient } from "./StudioClient";
+
+export const dynamic = "force-dynamic";
+
+export default async function StudioPage({ params }: { params: Promise<{ id: string }> }) {
+  const { id } = await params;
+  const inf = db.select().from(schema.influencers).where(eq(schema.influencers.id, id)).get();
+  if (!inf) notFound();
+  const canonical = inf.canonicalImageId
+    ? db.select().from(schema.assets).where(eq(schema.assets.id, inf.canonicalImageId)).get()
+    : null;
+
+  return (
+    <div className="grid grid-cols-1 lg:grid-cols-[1fr_360px] gap-8">
+      <div>
+        <div className="text-sm text-muted">{inf.name}</div>
+        <h1 className="text-3xl font-semibold tracking-tight mb-1">Video studio</h1>
+        <p className="text-muted mb-8">
+          Give a topic. Claude writes the script, F5-TTS voices it, Wan animates a keyframe, and
+          LatentSync syncs the lips. Output is 1080×1920 with burned captions.
+        </p>
+        <StudioClient influencerId={inf.id} hasCanonical={!!canonical} />
+      </div>
+
+      <aside className="rounded-xl border border-border bg-panel p-4 h-fit lg:sticky lg:top-24">
+        <div className="text-sm font-medium mb-2">Identity</div>
+        {canonical ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img src={canonical.url} alt="" className="rounded-md aspect-[9/16] w-full object-cover" />
+        ) : (
+          <div className="rounded-md aspect-[9/16] bg-bg grid place-items-center text-muted text-sm p-4 text-center">
+            No canonical image yet. Pick one from the influencer page first.
+          </div>
+        )}
+        <dl className="mt-4 space-y-2 text-xs">
+          <Row label="Voice">{inf.persona.voiceDescription}</Row>
+          <Row label="Pillars">{inf.persona.contentPillars.join(", ")}</Row>
+        </dl>
+      </aside>
+    </div>
+  );
+}
+
+function Row({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <div>
+      <dt className="text-muted">{label}</dt>
+      <dd>{children}</dd>
+    </div>
+  );
+}
