@@ -6,22 +6,24 @@ Generate consistent AI influencers and short-form vertical video on command.
 
 1. **Persona** — Claude designs a coherent persona (name, looks, voice, content pillars, locked Flux prompt).
 2. **Identity** — Flux + PuLID (via fal.ai) renders a starter pack of 4 reference shots; you pick the canonical face.
-3. **Video** — for any topic, the pipeline writes a script (Claude), voices it (F5-TTS), generates a keyframe, animates 5–8s with Wan 2.2, syncs lips with LatentSync, and ffmpeg crops to 1080×1920 with burned-in captions.
+3. **Video** — for any topic, the pipeline writes a script (Claude), voices it (F5-TTS), generates a keyframe, animates 5–8s with Wan 2.2, syncs lips with LatentSync, and ffmpeg crops to 1080×1920.
 4. Output is a TikTok-ready MP4.
 
 ## Stack
 
 - Next.js 15 (App Router, TypeScript)
-- SQLite + Drizzle (zero-setup persistence)
-- fal.ai for all heavy ML (Flux, PuLID, Wan 2.2, F5-TTS, LatentSync) — runs from your laptop
+- **Postgres** (Drizzle ORM) for persistence
+- **S3-compatible object storage** (Cloudflare R2 / AWS S3 / Backblaze B2 / MinIO) for assets
+- fal.ai for all heavy ML (Flux, PuLID, Wan 2.2, F5-TTS, LatentSync)
 - Anthropic SDK for text
-- ffmpeg-static for local post-processing
+- ffmpeg-static for local 9:16 post-processing (no system ffmpeg needed)
 
-## Setup
+## Local dev
 
 ```bash
 cp .env.example .env
-# fill in ANTHROPIC_API_KEY and FAL_KEY
+# fill in ANTHROPIC_API_KEY, FAL_KEY, DATABASE_URL
+# (optionally: S3_BUCKET + S3_PUBLIC_URL + S3_* creds — falls back to local FS if omitted)
 npm install
 npm run dev
 ```
@@ -30,46 +32,80 @@ Open http://localhost:3000.
 
 ### Mock mode
 
-Set `USE_MOCK_PROVIDERS=1` in `.env` to use placeholder images/videos and skip API costs. Useful for UI work.
+Set `USE_MOCK_PROVIDERS=1` to use placeholder images/silent videos and skip API costs. Useful for UI work. You still need `DATABASE_URL`.
 
 ## Deploy on Railway
 
 The repo ships with a `Dockerfile` and `railway.json` ready to go.
 
-1. **Create a service** from this GitHub repo on [railway.app](https://railway.app/new). Railway auto-detects the Dockerfile.
-2. **Add a volume** (Service → Settings → Volumes) mounted at `/data`. SQLite and generated assets live there — without it your data resets every deploy.
-3. **Set environment variables**:
-   - `ANTHROPIC_API_KEY` — your Claude key
-   - `FAL_KEY` — your fal.ai key
-   - (optional) `USE_MOCK_PROVIDERS=1` for a free demo deploy
-4. **Generate a public domain** (Settings → Networking → Generate Domain). The app reads `RAILWAY_PUBLIC_DOMAIN` automatically and uses it as the public base URL so fal.ai can fetch reference assets back from your deployment. If you set a custom domain, also set `PUBLIC_BASE_URL=https://your.domain` to override.
-5. **Deploy.** Health check is `/api/health`.
+### 1. Create the Postgres add-on
+- New Project → **Add Postgres**. Railway auto-injects `DATABASE_URL` into your service env.
+- The app auto-creates the `influencers`, `assets`, `jobs` tables on first boot — no manual migrations.
 
-**Why the volume matters** — the pipeline downloads each generated image/video to local disk and serves them at `/api/assets/...`. fal needs to fetch the canonical face image back from your deployment, so the URL must persist between requests and across restarts.
+### 2. Create the service from this repo
+- **Deploy from GitHub Repo** → select `Biggjuann/influential`, branch `claude/ai-influencer-generator-juPVJ`.
+- Railway detects the `Dockerfile` automatically.
 
-**Cold-start budget** — first request after a deploy compiles native modules from the cached image; warm requests are instant. Image gen is ~6-10s, video gen is ~60-120s on fal.
+### 3. Object storage (Cloudflare R2 — recommended, cheapest)
+
+Railway doesn't host blob storage, so we use Cloudflare R2 (S3-compatible, free 10 GB egress).
+
+1. Cloudflare dashboard → R2 → **Create bucket** (e.g. `influential-assets`).
+2. Settings → **Public access** → enable. Note the public URL (`https://pub-<id>.r2.dev`) or attach a custom domain.
+3. **R2 API Tokens** → Create Token, **Object Read & Write** scoped to your bucket. Save the Access Key ID + Secret.
+4. Find your account-level S3 endpoint: `https://<account-id>.r2.cloudflarestorage.com`.
+
+### 4. Set environment variables on the Railway service
+
+| Variable | Value |
+| --- | --- |
+| `ANTHROPIC_API_KEY` | from console.anthropic.com |
+| `FAL_KEY` | from fal.ai/dashboard/keys |
+| `S3_BUCKET` | `influential-assets` |
+| `S3_PUBLIC_URL` | `https://pub-<id>.r2.dev` (or your custom domain) |
+| `S3_ENDPOINT` | `https://<account-id>.r2.cloudflarestorage.com` |
+| `S3_REGION` | `auto` |
+| `S3_ACCESS_KEY_ID` | from R2 API token |
+| `S3_SECRET_ACCESS_KEY` | from R2 API token |
+
+`DATABASE_URL` is set automatically by the Postgres add-on. `RAILWAY_PUBLIC_DOMAIN` is set automatically once you generate a domain.
+
+### 5. Generate a public domain
+
+Service → Settings → Networking → **Generate Domain**. Health check is `/api/health`.
+
+### 6. Deploy
+
+Push the branch — Railway builds from the Dockerfile, runs migrations on first request, and serves the app on the domain you generated.
+
+### Why this stack
+
+- **No volume needed.** Persistence lives in Postgres + R2, both managed.
+- **fal needs your reference images.** During multi-step generation (face-locked image-to-video) fal pulls the canonical image from `S3_PUBLIC_URL` directly. R2 public URLs work without auth — that's why the bucket needs public read.
+- **Multi-instance safe.** Because nothing's on local disk, you can scale the service to 2+ replicas without sharding.
 
 ## Project layout
 
 ```
 src/
   app/                   Next.js routes + API
-    api/                 REST endpoints
+    api/                 REST endpoints (health, influencers, images, videos, jobs)
     influencers/         Roster, detail, studio
   lib/
-    db/                  SQLite + Drizzle schema
+    db/                  Drizzle schema + pg client
     providers/           fal + anthropic + mock (swappable)
     pipeline/            Persona / images / video / postprocess
-    jobs.ts              SQLite-backed job queue
-data/                    SQLite db + generated assets (gitignored)
+    storage.ts           S3 + FS-fallback storage layer
+    jobs.ts              Postgres-backed job queue
+    publicUrl.ts         RAILWAY_PUBLIC_DOMAIN -> base URL helper
 ```
 
 ## Swapping providers
 
-`src/lib/providers/types.ts` defines the `MediaProvider` interface. Anything that implements it (`generateImage`, `generateVideo`, `tts`, `lipsync`) can be plugged in via `getProvider()` in `providers/index.ts`. When you have a 24GB+ GPU, you can drop in a ComfyUI-backed provider without touching pipeline code.
+`src/lib/providers/types.ts` defines the `MediaProvider` interface (`generateImage`, `generateVideo`, `tts`, `lipsync`). Anything that implements it can be plugged in via `getProvider()` in `providers/index.ts`. When you have a 24GB+ GPU, drop in a ComfyUI-backed provider without touching the pipeline.
 
 ## Notes
 
-- All assets are stored locally under `data/assets/` and served via `/api/assets/...`. Switch to S3/R2 by modifying `src/lib/storage.ts`.
-- Jobs are tracked in SQLite and polled from the client. For higher throughput, swap in BullMQ + Redis.
-- Wan 2.2 generates ~5s clips at 720p. Stitching multi-shot videos isn't yet implemented — single-shot only.
+- Captions render as overlay text in the UI, not burned into the MP4 — `ffmpeg-static` ships without libfreetype/drawtext. Install system ffmpeg in the runtime image if you want them baked in.
+- Wan 2.2 generates 5–8s clips at 720p. Multi-shot stitching isn't yet implemented — single-shot only.
+- Background jobs run in-process. For higher concurrency, swap in BullMQ + Redis.

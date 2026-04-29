@@ -1,38 +1,38 @@
-import { sqliteTable, text, integer } from "drizzle-orm/sqlite-core";
+import { pgTable, text, integer, jsonb, bigint } from "drizzle-orm/pg-core";
 import { sql } from "drizzle-orm";
 
-export const influencers = sqliteTable("influencers", {
+export const influencers = pgTable("influencers", {
   id: text("id").primaryKey(),
   name: text("name").notNull(),
   niche: text("niche").notNull(),
-  persona: text("persona", { mode: "json" }).$type<Persona>().notNull(),
+  persona: jsonb("persona").$type<Persona>().notNull(),
   canonicalImageId: text("canonical_image_id"),
   voiceRefUrl: text("voice_ref_url"),
-  createdAt: integer("created_at").notNull().default(sql`(strftime('%s','now'))`),
+  createdAt: bigint("created_at", { mode: "number" }).notNull().default(sql`extract(epoch from now())::bigint`),
 });
 
-export const assets = sqliteTable("assets", {
+export const assets = pgTable("assets", {
   id: text("id").primaryKey(),
   influencerId: text("influencer_id").notNull(),
   kind: text("kind", { enum: ["image", "video", "audio"] }).notNull(),
   url: text("url").notNull(),
-  localPath: text("local_path"),
-  meta: text("meta", { mode: "json" }).$type<Record<string, unknown>>(),
-  createdAt: integer("created_at").notNull().default(sql`(strftime('%s','now'))`),
+  storageKey: text("storage_key"),
+  meta: jsonb("meta").$type<Record<string, unknown>>(),
+  createdAt: bigint("created_at", { mode: "number" }).notNull().default(sql`extract(epoch from now())::bigint`),
 });
 
-export const jobs = sqliteTable("jobs", {
+export const jobs = pgTable("jobs", {
   id: text("id").primaryKey(),
   influencerId: text("influencer_id"),
   kind: text("kind", { enum: ["persona", "images", "video"] }).notNull(),
   status: text("status", { enum: ["queued", "running", "done", "error"] }).notNull(),
   progress: integer("progress").notNull().default(0),
   step: text("step"),
-  input: text("input", { mode: "json" }).$type<Record<string, unknown>>(),
-  output: text("output", { mode: "json" }).$type<Record<string, unknown>>(),
+  input: jsonb("input").$type<Record<string, unknown>>(),
+  output: jsonb("output").$type<Record<string, unknown>>(),
   error: text("error"),
-  createdAt: integer("created_at").notNull().default(sql`(strftime('%s','now'))`),
-  updatedAt: integer("updated_at").notNull().default(sql`(strftime('%s','now'))`),
+  createdAt: bigint("created_at", { mode: "number" }).notNull().default(sql`extract(epoch from now())::bigint`),
+  updatedAt: bigint("updated_at", { mode: "number" }).notNull().default(sql`extract(epoch from now())::bigint`),
 });
 
 export type Persona = {

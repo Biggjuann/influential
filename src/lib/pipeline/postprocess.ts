@@ -1,15 +1,10 @@
 import "server-only";
 import ffmpegPath from "ffmpeg-static";
 import ffmpeg from "fluent-ffmpeg";
-import { mkdir } from "node:fs/promises";
 import { execSync } from "node:child_process";
-import { join } from "node:path";
-import { nanoid } from "nanoid";
 
 const bin = ffmpegPath as unknown as string | null;
 if (bin) ffmpeg.setFfmpegPath(bin);
-
-const STORAGE_ROOT = process.env.STORAGE_DIR ?? "./data/assets";
 
 // ffmpeg-static ships without libfreetype/libass, so drawtext is unavailable.
 // Detect once at startup; when missing, we skip the caption burn step. The UI
@@ -28,13 +23,9 @@ const SUPPORTS_DRAWTEXT = (() => {
 // Crop/scale to TikTok 1080x1920. Optionally burn caption text.
 export async function burnCaptionsAndCrop(args: {
   inputPath: string;
+  outputPath: string;
   captionText: string;
-  influencerId: string;
-}): Promise<string> {
-  const dir = join(STORAGE_ROOT, args.influencerId, "video-final");
-  await mkdir(dir, { recursive: true });
-  const outPath = join(dir, `${nanoid(12)}.mp4`);
-
+}): Promise<void> {
   const filters = [
     "scale=w=if(gt(a\\,9/16)\\,-2\\,1080):h=if(gt(a\\,9/16)\\,1920\\,-2)",
     "crop=1080:1920",
@@ -46,7 +37,7 @@ export async function burnCaptionsAndCrop(args: {
     );
   }
 
-  return new Promise((resolve, reject) => {
+  await new Promise<void>((resolve, reject) => {
     ffmpeg(args.inputPath)
       .videoFilters(filters)
       .outputOptions([
@@ -58,8 +49,8 @@ export async function burnCaptionsAndCrop(args: {
         "-b:a 128k",
         "-movflags +faststart",
       ])
-      .save(outPath)
-      .on("end", () => resolve(outPath))
+      .save(args.outputPath)
+      .on("end", () => resolve())
       .on("error", reject);
   });
 }

@@ -1,16 +1,21 @@
 import { notFound } from "next/navigation";
-import { db, schema } from "@/lib/db";
+import { db, schema, ready } from "@/lib/db";
 import { eq } from "drizzle-orm";
 import { StudioClient } from "./StudioClient";
 
 export const dynamic = "force-dynamic";
 
 export default async function StudioPage({ params }: { params: Promise<{ id: string }> }) {
+  await ready();
   const { id } = await params;
-  const inf = db.select().from(schema.influencers).where(eq(schema.influencers.id, id)).get();
+  const inf = (
+    await db.select().from(schema.influencers).where(eq(schema.influencers.id, id)).limit(1)
+  )[0];
   if (!inf) notFound();
   const canonical = inf.canonicalImageId
-    ? db.select().from(schema.assets).where(eq(schema.assets.id, inf.canonicalImageId)).get()
+    ? (
+        await db.select().from(schema.assets).where(eq(schema.assets.id, inf.canonicalImageId)).limit(1)
+      )[0]
     : null;
 
   return (

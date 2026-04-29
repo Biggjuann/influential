@@ -35,7 +35,10 @@ export async function POST(req: NextRequest) {
         }),
       );
     } catch (err) {
-      updateJob(jobId, { status: "error", error: err instanceof Error ? err.message : String(err) });
+      await updateJob(jobId, {
+        status: "error",
+        error: err instanceof Error ? err.message : String(err),
+      });
     }
   })();
 

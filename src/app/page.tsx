@@ -1,12 +1,20 @@
 import Link from "next/link";
-import { db, schema } from "@/lib/db";
-import { desc, eq } from "drizzle-orm";
+import { db, schema, ready } from "@/lib/db";
+import { desc, inArray } from "drizzle-orm";
 import { Button } from "@/components/Button";
 
 export const dynamic = "force-dynamic";
 
-export default function Home() {
-  const rows = db.select().from(schema.influencers).orderBy(desc(schema.influencers.createdAt)).all();
+export default async function Home() {
+  await ready();
+  const rows = await db.select().from(schema.influencers).orderBy(desc(schema.influencers.createdAt));
+
+  // Resolve canonical thumbnails in one query.
+  const thumbIds = rows.map((r) => r.canonicalImageId).filter((x): x is string => !!x);
+  const thumbs = thumbIds.length
+    ? await db.select().from(schema.assets).where(inArray(schema.assets.id, thumbIds))
+    : [];
+  const thumbByAssetId = new Map(thumbs.map((t) => [t.id, t.url]));
 
   return (
     <div className="space-y-8">
@@ -29,37 +37,32 @@ export default function Home() {
         </div>
       ) : (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-          {rows.map((r) => (
-            <Link
-              key={r.id}
-              href={`/influencers/${r.id}`}
-              className="group rounded-xl border border-border bg-panel overflow-hidden hover:border-accent/60 transition-colors"
-            >
-              <CanonicalThumb canonicalImageId={r.canonicalImageId} />
-              <div className="p-4">
-                <div className="font-medium">{r.name}</div>
-                <div className="text-sm text-muted">{r.niche}</div>
-              </div>
-            </Link>
-          ))}
+          {rows.map((r) => {
+            const thumbUrl = r.canonicalImageId ? thumbByAssetId.get(r.canonicalImageId) : undefined;
+            return (
+              <Link
+                key={r.id}
+                href={`/influencers/${r.id}`}
+                className="group rounded-xl border border-border bg-panel overflow-hidden hover:border-accent/60 transition-colors"
+              >
+                {thumbUrl ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img src={thumbUrl} alt="" className="aspect-[9/16] w-full object-cover" />
+                ) : (
+                  <div className="aspect-[9/16] bg-gradient-to-br from-accent/20 to-accent2/20 grid place-items-center text-muted text-sm">
+                    generating…
+                  </div>
+                )}
+                <div className="p-4">
+                  <div className="font-medium">{r.name}</div>
+                  <div className="text-sm text-muted">{r.niche}</div>
+                </div>
+              </Link>
+            );
+          })}
         </div>
       )}
     </div>
   );
 }
 
-function CanonicalThumb({ canonicalImageId }: { canonicalImageId: string | null }) {
-  if (!canonicalImageId) {
-    return (
-      <div className="aspect-[9/16] bg-gradient-to-br from-accent/20 to-accent2/20 grid place-items-center text-muted text-sm">
-        generating…
-      </div>
-    );
-  }
-  const asset = db.select().from(schema.assets).where(eq(schema.assets.id, canonicalImageId)).get();
-  if (!asset) return <div className="aspect-[9/16] bg-panel" />;
-  return (
-    // eslint-disable-next-line @next/next/no-img-element
-    <img src={asset.url} alt="" className="aspect-[9/16] w-full object-cover" />
-  );
-}

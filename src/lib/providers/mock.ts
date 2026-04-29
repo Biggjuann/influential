@@ -2,7 +2,8 @@ import "server-only";
 import zlib from "node:zlib";
 import { mkdir } from "node:fs/promises";
 import { existsSync } from "node:fs";
-import { join, resolve } from "node:path";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { spawn } from "node:child_process";
 import ffmpegPath from "ffmpeg-static";
@@ -58,9 +59,9 @@ function placeholderImage(seed: number) {
 let mp4Promise: Promise<string> | null = null;
 async function getMockMp4Url(): Promise<string> {
   mp4Promise ??= (async () => {
-    const dir = resolve(process.env.STORAGE_DIR ?? "./data/assets");
+    const dir = join(tmpdir(), "influential-mock");
     await mkdir(dir, { recursive: true });
-    const path = join(dir, "_mock-sample.mp4");
+    const path = join(dir, "sample.mp4");
     if (existsSync(path)) return pathToFileURL(path).toString();
     const bin = ffmpegPath as unknown as string | null;
     if (!bin) throw new Error("ffmpeg-static not found");

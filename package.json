@@ -13,8 +13,8 @@
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.39.0",
+    "@aws-sdk/client-s3": "^3.726.1",
     "@fal-ai/client": "^1.2.1",
-    "better-sqlite3": "^11.7.0",
     "clsx": "^2.1.1",
     "drizzle-orm": "^0.38.3",
     "ffmpeg-static": "^5.2.0",
@@ -22,15 +22,16 @@
     "lucide-react": "^0.469.0",
     "nanoid": "^5.0.9",
     "next": "15.1.4",
+    "pg": "^8.13.1",
     "react": "19.0.0",
     "react-dom": "19.0.0",
     "tailwind-merge": "^2.6.0",
     "zod": "^3.24.1"
   },
   "devDependencies": {
-    "@types/better-sqlite3": "^7.6.12",
     "@types/fluent-ffmpeg": "^2.1.27",
     "@types/node": "^22.10.5",
+    "@types/pg": "^8.11.10",
     "@types/react": "^19.0.4",
     "@types/react-dom": "^19.0.2",
     "autoprefixer": "^10.4.20",

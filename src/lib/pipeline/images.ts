@@ -1,28 +1,28 @@
 import "server-only";
-import { db, schema } from "../db";
+import { db, schema, ready } from "../db";
 import { eq } from "drizzle-orm";
 import { nanoid } from "nanoid";
 import { getProvider } from "../providers";
-import { downloadToDisk } from "../storage";
-import { toAbsoluteUrl } from "../publicUrl";
+import { persistFromUrl } from "../storage";
 import type { Persona } from "../db/schema";
 
 export type SceneSpec = {
-  scene: string;       // e.g. "sitting on a balcony at sunset, Lisbon rooftops"
-  outfit?: string;     // e.g. "oversized cream knit sweater"
-  pose?: string;       // e.g. "looking over shoulder, slight smile"
+  scene: string;
+  outfit?: string;
+  pose?: string;
   expression?: string;
 };
 
 function buildPrompt(persona: Persona, scene: SceneSpec) {
-  const parts = [
+  return [
     persona.visualPrompt,
     scene.outfit ? `wearing ${scene.outfit}` : "",
     scene.pose ?? "",
     scene.expression ?? "",
     scene.scene,
-  ].filter(Boolean);
-  return parts.join(", ");
+  ]
+    .filter(Boolean)
+    .join(", ");
 }
 
 export async function generateInfluencerImages(args: {
@@ -31,13 +31,18 @@ export async function generateInfluencerImages(args: {
   useCanonicalAsReference?: boolean;
   onProgress?: (p: number, step: string) => void;
 }) {
-  const inf = db.select().from(schema.influencers).where(eq(schema.influencers.id, args.influencerId)).get();
+  await ready();
+  const inf = (
+    await db.select().from(schema.influencers).where(eq(schema.influencers.id, args.influencerId)).limit(1)
+  )[0];
   if (!inf) throw new Error("influencer not found");
 
   let referenceUrl: string | undefined;
   if (args.useCanonicalAsReference && inf.canonicalImageId) {
-    const ref = db.select().from(schema.assets).where(eq(schema.assets.id, inf.canonicalImageId)).get();
-    if (ref?.url) referenceUrl = toAbsoluteUrl(ref.url);
+    const ref = (
+      await db.select().from(schema.assets).where(eq(schema.assets.id, inf.canonicalImageId)).limit(1)
+    )[0];
+    if (ref?.url) referenceUrl = ref.url;
   }
 
   const provider = getProvider();
@@ -56,30 +61,49 @@ export async function generateInfluencerImages(args: {
     });
 
     for (const img of out.images) {
-      const downloaded = await downloadToDisk(img.url, "jpg", `${inf.id}/images`);
       const id = nanoid(12);
-      db.insert(schema.assets)
-        .values({
-          id,
-          influencerId: inf.id,
-          kind: "image",
-          url: downloaded.publicUrl,
-          localPath: downloaded.path,
-          meta: { scene: scene.scene, seed: img.seed, sourceUrl: img.url },
-        })
-        .run();
-      created.push({ id, url: downloaded.publicUrl, scene: scene.scene });
+      const persisted = await persistFromUrl(img.url, {
+        key: `${inf.id}/images/${id}.jpg`,
+        ext: "jpg",
+      });
+      await db.insert(schema.assets).values({
+        id,
+        influencerId: inf.id,
+        kind: "image",
+        url: persisted.url,
+        storageKey: persisted.key,
+        meta: { scene: scene.scene, seed: img.seed, sourceUrl: img.url },
+      });
+      created.push({ id, url: persisted.url, scene: scene.scene });
     }
-    args.onProgress?.(Math.round(((i + 1) / args.scenes.length) * 100), `done ${i + 1}/${args.scenes.length}`);
+    args.onProgress?.(
+      Math.round(((i + 1) / args.scenes.length) * 100),
+      `done ${i + 1}/${args.scenes.length}`,
+    );
   }
 
   return { assets: created };
 }
 
-// Initial pack of scenes used right after persona creation, to build a reference set.
 export const STARTER_SCENES: SceneSpec[] = [
-  { scene: "neutral studio backdrop, soft beauty light, head and shoulders", pose: "looking directly at camera, relaxed neutral expression", outfit: "plain white tee" },
-  { scene: "morning kitchen with sunlight through linen curtains", pose: "leaning on counter holding a mug", outfit: "oversized cream knit sweater" },
-  { scene: "city street golden hour, shallow depth of field", pose: "candid mid-laugh, hair caught in wind", outfit: "vintage leather jacket over a slip dress" },
-  { scene: "cafe interior, espresso machine bokeh", pose: "seated at a window, glancing aside", outfit: "tailored beige blazer" },
+  {
+    scene: "neutral studio backdrop, soft beauty light, head and shoulders",
+    pose: "looking directly at camera, relaxed neutral expression",
+    outfit: "plain white tee",
+  },
+  {
+    scene: "morning kitchen with sunlight through linen curtains",
+    pose: "leaning on counter holding a mug",
+    outfit: "oversized cream knit sweater",
+  },
+  {
+    scene: "city street golden hour, shallow depth of field",
+    pose: "candid mid-laugh, hair caught in wind",
+    outfit: "vintage leather jacket over a slip dress",
+  },
+  {
+    scene: "cafe interior, espresso machine bokeh",
+    pose: "seated at a window, glancing aside",
+    outfit: "tailored beige blazer",
+  },
 ];

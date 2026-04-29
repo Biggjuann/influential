@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { db, schema } from "@/lib/db";
+import { db, schema, ready } from "@/lib/db";
 import { eq, desc } from "drizzle-orm";
 import { Button } from "@/components/Button";
 import { InfluencerClient } from "./InfluencerClient";
@@ -8,16 +8,18 @@ import { InfluencerClient } from "./InfluencerClient";
 export const dynamic = "force-dynamic";
 
 export default async function InfluencerPage({ params }: { params: Promise<{ id: string }> }) {
+  await ready();
   const { id } = await params;
-  const inf = db.select().from(schema.influencers).where(eq(schema.influencers.id, id)).get();
+  const inf = (
+    await db.select().from(schema.influencers).where(eq(schema.influencers.id, id)).limit(1)
+  )[0];
   if (!inf) notFound();
 
-  const allAssets = db
+  const allAssets = await db
     .select()
     .from(schema.assets)
     .where(eq(schema.assets.influencerId, id))
-    .orderBy(desc(schema.assets.createdAt))
-    .all();
+    .orderBy(desc(schema.assets.createdAt));
 
   const images = allAssets.filter((a) => a.kind === "image");
   const videos = allAssets.filter((a) => a.kind === "video");

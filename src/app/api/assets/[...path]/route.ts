@@ -1,11 +1,9 @@
 import { NextRequest } from "next/server";
-import { createReadStream, statSync, existsSync } from "node:fs";
-import { join, normalize } from "node:path";
+import { createReadStream } from "node:fs";
 import { Readable } from "node:stream";
+import { readFromFsKey, storageMode } from "@/lib/storage";
 
 export const runtime = "nodejs";
-
-const ROOT = process.env.STORAGE_DIR ?? "./data/assets";
 
 const MIME: Record<string, string> = {
   jpg: "image/jpeg",
@@ -19,21 +17,26 @@ const MIME: Record<string, string> = {
   m4a: "audio/mp4",
 };
 
+// Fallback file server for FS storage mode (local dev / mock). In S3 mode,
+// asset URLs point directly at the bucket and never hit this route.
 export async function GET(_req: NextRequest, { params }: { params: Promise<{ path: string[] }> }) {
+  if (storageMode !== "fs") return new Response("not found", { status: 404 });
+
   const { path } = await params;
-  const safe = path.map((p) => p.replace(/\.\./g, ""));
-  const filePath = normalize(join(ROOT, ...safe));
-  if (!filePath.startsWith(normalize(ROOT))) {
-    return new Response("forbidden", { status: 403 });
+  const key = path.map((p) => p.replace(/\.\./g, "")).join("/");
+  let info;
+  try {
+    info = await readFromFsKey(key);
+  } catch {
+    return new Response("not found", { status: 404 });
   }
-  if (!existsSync(filePath)) return new Response("not found", { status: 404 });
-  const stat = statSync(filePath);
-  const ext = filePath.split(".").pop()?.toLowerCase() ?? "";
-  const stream = Readable.toWeb(createReadStream(filePath)) as ReadableStream;
+
+  const ext = info.path.split(".").pop()?.toLowerCase() ?? "";
+  const stream = Readable.toWeb(createReadStream(info.path)) as ReadableStream;
   return new Response(stream, {
     headers: {
       "Content-Type": MIME[ext] ?? "application/octet-stream",
-      "Content-Length": String(stat.size),
+      "Content-Length": String(info.size),
       "Cache-Control": "public, max-age=31536000, immutable",
     },
   });
