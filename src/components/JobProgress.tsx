@@ -8,6 +8,8 @@ type Job = {
   step: string | null;
   error: string | null;
   output: unknown;
+  createdAt?: number;
+  updatedAt?: number;
 };
 
 export function JobProgress({
@@ -18,6 +20,7 @@ export function JobProgress({
   onDone?: (output: unknown) => void;
 }) {
   const [job, setJob] = useState<Job | null>(null);
+  const [now, setNow] = useState(Date.now());
 
   useEffect(() => {
     let stopped = false;
@@ -36,8 +39,10 @@ export function JobProgress({
       }
     }
     poll();
+    const tick = setInterval(() => setNow(Date.now()), 1000);
     return () => {
       stopped = true;
+      clearInterval(tick);
     };
   }, [jobId, onDone]);
 
@@ -54,11 +59,17 @@ export function JobProgress({
     );
   }
 
+  const elapsed = job.createdAt ? Math.max(0, Math.floor(now / 1000) - job.createdAt) : 0;
+  const elapsedText = elapsed > 0 ? `${formatDuration(elapsed)} elapsed` : null;
+
   return (
     <div className="space-y-2">
       <div className="flex items-center justify-between text-sm">
         <span className="text-muted">{job.step ?? job.status}</span>
-        <span className="tabular-nums text-muted">{job.progress}%</span>
+        <span className="tabular-nums text-muted">
+          {elapsedText ? `${elapsedText} · ` : ""}
+          {job.progress}%
+        </span>
       </div>
       <div className="h-2 rounded-full bg-border overflow-hidden">
         <div
@@ -68,4 +79,11 @@ export function JobProgress({
       </div>
     </div>
   );
+}
+
+function formatDuration(seconds: number) {
+  if (seconds < 60) return `${seconds}s`;
+  const m = Math.floor(seconds / 60);
+  const s = seconds % 60;
+  return `${m}m ${s}s`;
 }

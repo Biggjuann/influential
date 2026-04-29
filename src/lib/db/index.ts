@@ -71,6 +71,14 @@ async function ensureSchema() {
     CREATE INDEX IF NOT EXISTS idx_assets_influencer ON assets(influencer_id);
     CREATE INDEX IF NOT EXISTS idx_jobs_influencer ON jobs(influencer_id);
   `);
+
+  // Sweep stale jobs: anything in 'running' or 'queued' from before this
+  // process started can't be alive (in-process promises die with the process).
+  // Mark them errored so the UI stops showing a stuck progress bar.
+  await getPool().query(
+    `UPDATE jobs SET status='error', error=COALESCE(error, 'process restarted while job was running'), updated_at=extract(epoch from now())::bigint
+     WHERE status IN ('running','queued')`,
+  );
 }
 
 export async function ready() {

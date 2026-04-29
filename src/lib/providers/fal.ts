@@ -28,17 +28,35 @@ const ENDPOINTS = {
   lipsync: process.env.FAL_ENDPOINT_LIPSYNC ?? "fal-ai/latentsync",
 };
 
+// Per-step timeout so a stuck fal request fails loud instead of hanging
+// forever. LatentSync (lipsync) is the slowest step, typically 30-90s for a
+// 5s clip, but can take 2-3 min. We default to 8 min as a safety ceiling.
+const STEP_TIMEOUT_MS = Number(process.env.FAL_TIMEOUT_MS ?? 8 * 60 * 1000);
+
 // Surface fal's structured 422 / validation errors instead of swallowing them
 // as a bare "Unprocessable Entity". When fal rejects an input it returns
 // `{ detail: [{ loc, msg, type }] }` which we flatten into a readable message.
 async function call<T>(endpoint: string, input: Record<string, unknown>): Promise<T> {
+  const start = Date.now();
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const timeout = new Promise<never>((_, reject) => {
+    timer = setTimeout(
+      () => reject(new Error(`timed out after ${Math.round(STEP_TIMEOUT_MS / 1000)}s`)),
+      STEP_TIMEOUT_MS,
+    );
+  });
   try {
-    const result = await (fal as unknown as {
+    const subscribe = (fal as unknown as {
       subscribe: (e: string, o: { input: Record<string, unknown> }) => Promise<{ data: T }>;
-    }).subscribe(endpoint, { input });
-    return result.data;
+    })
+      .subscribe(endpoint, { input })
+      .then((r) => r.data);
+    return await Promise.race([subscribe, timeout]);
   } catch (err) {
-    throw new Error(formatFalError(endpoint, err));
+    const elapsed = Math.round((Date.now() - start) / 1000);
+    throw new Error(`${formatFalError(endpoint, err)} [after ${elapsed}s]`);
+  } finally {
+    if (timer) clearTimeout(timer);
   }
 }
 
