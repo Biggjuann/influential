@@ -19,19 +19,25 @@ if (process.env.FAL_KEY) {
 // Endpoint paths are configurable so you can swap models without redeploying
 // when fal.ai publishes new versions, deprecates routes, or you want to test
 // alternates (e.g. Kling vs Wan vs LTX for video).
+//
+// Default video model is Kling 1.6 standard — it's much faster and more
+// reliable on fal than Wan-pro (~30-60s vs 3-8 min) at comparable quality
+// for short-form vertical clips. Override with FAL_ENDPOINT_VIDEO_I2V if you
+// want to trade speed for higher fidelity.
 const ENDPOINTS = {
   flux: process.env.FAL_ENDPOINT_FLUX ?? "fal-ai/flux/dev",
   fluxId: process.env.FAL_ENDPOINT_FLUX_ID ?? "fal-ai/flux-pulid",
-  videoI2V: process.env.FAL_ENDPOINT_VIDEO_I2V ?? "fal-ai/wan-pro/image-to-video",
+  videoI2V:
+    process.env.FAL_ENDPOINT_VIDEO_I2V ?? "fal-ai/kling-video/v1.6/standard/image-to-video",
   ttsClone: process.env.FAL_ENDPOINT_TTS_CLONE ?? "fal-ai/f5-tts",
   ttsFallback: process.env.FAL_ENDPOINT_TTS_FALLBACK ?? "fal-ai/kokoro/american-english",
   lipsync: process.env.FAL_ENDPOINT_LIPSYNC ?? "fal-ai/latentsync",
 };
 
 // Per-step timeout so a stuck fal request fails loud instead of hanging
-// forever. LatentSync (lipsync) is the slowest step, typically 30-90s for a
-// 5s clip, but can take 2-3 min. We default to 8 min as a safety ceiling.
-const STEP_TIMEOUT_MS = Number(process.env.FAL_TIMEOUT_MS ?? 8 * 60 * 1000);
+// forever. Default 10 min — Kling 1.6 typically finishes in <90s, but fal's
+// queue can occasionally back up and we want a generous ceiling.
+const STEP_TIMEOUT_MS = Number(process.env.FAL_TIMEOUT_MS ?? 10 * 60 * 1000);
 
 // Surface fal's structured 422 / validation errors instead of swallowing them
 // as a bare "Unprocessable Entity". When fal rejects an input it returns
