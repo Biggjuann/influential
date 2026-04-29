@@ -1,20 +1,31 @@
 import "server-only";
 import { Pool } from "pg";
-import { drizzle } from "drizzle-orm/node-postgres";
+import { drizzle, type NodePgDatabase } from "drizzle-orm/node-postgres";
 import * as schema from "./schema";
 
-const DATABASE_URL = process.env.DATABASE_URL;
-if (!DATABASE_URL) {
-  throw new Error("DATABASE_URL is not set — point it at your Postgres instance (Railway provides this automatically).");
-}
+// Connection setup is fully lazy: routes get imported during `next build` for
+// page-data collection, before runtime env vars are available. Throwing here
+// would break the build, so we defer until the first actual query.
 
-// Railway internal Postgres URLs don't need TLS; managed external ones do.
-// node-postgres autodetects via the URL — leave ssl undefined.
-const pool = new Pool({
-  connectionString: DATABASE_URL,
-  max: 5,
-  ssl: needsSsl(DATABASE_URL) ? { rejectUnauthorized: false } : undefined,
-});
+let _pool: Pool | null = null;
+let _db: NodePgDatabase<typeof schema> | null = null;
+let _initPromise: Promise<void> | null = null;
+
+function getPool(): Pool {
+  if (_pool) return _pool;
+  const url = process.env.DATABASE_URL;
+  if (!url) {
+    throw new Error(
+      "DATABASE_URL is not set — point it at your Postgres instance (Railway provides this automatically when you attach a Postgres add-on).",
+    );
+  }
+  _pool = new Pool({
+    connectionString: url,
+    max: 5,
+    ssl: needsSsl(url) ? { rejectUnauthorized: false } : undefined,
+  });
+  return _pool;
+}
 
 function needsSsl(url: string) {
   if (process.env.PGSSLMODE === "disable") return false;
@@ -24,10 +35,8 @@ function needsSsl(url: string) {
   return true;
 }
 
-let initialized = false;
 async function ensureSchema() {
-  if (initialized) return;
-  await pool.query(`
+  await getPool().query(`
     CREATE TABLE IF NOT EXISTS influencers (
       id TEXT PRIMARY KEY,
       name TEXT NOT NULL,
@@ -62,13 +71,20 @@ async function ensureSchema() {
     CREATE INDEX IF NOT EXISTS idx_assets_influencer ON assets(influencer_id);
     CREATE INDEX IF NOT EXISTS idx_jobs_influencer ON jobs(influencer_id);
   `);
-  initialized = true;
 }
 
-const initPromise = ensureSchema();
 export async function ready() {
-  await initPromise;
+  _initPromise ??= ensureSchema();
+  await _initPromise;
 }
 
-export const db = drizzle(pool, { schema });
+// Proxy that lazily resolves the underlying drizzle instance. Lets callers do
+// `db.select()...` without us having to await initialization first.
+export const db: NodePgDatabase<typeof schema> = new Proxy({} as NodePgDatabase<typeof schema>, {
+  get(_target, prop) {
+    _db ??= drizzle(getPool(), { schema });
+    return Reflect.get(_db, prop, _db);
+  },
+});
+
 export { schema };
