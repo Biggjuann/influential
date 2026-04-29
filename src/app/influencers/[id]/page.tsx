@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 import { db, schema, ready } from "@/lib/db";
 import { eq, desc } from "drizzle-orm";
 import { Button } from "@/components/Button";
+import { PersonaEditor } from "@/components/PersonaEditor";
 import { InfluencerClient } from "./InfluencerClient";
 
 export const dynamic = "force-dynamic";
@@ -39,9 +40,17 @@ export default async function InfluencerPage({ params }: { params: Promise<{ id:
             ))}
           </div>
         </div>
-        <Link href={`/influencers/${inf.id}/studio`}>
-          <Button>🎬 New video</Button>
-        </Link>
+        <div className="flex items-center gap-2 shrink-0">
+          <PersonaEditor
+            influencerId={inf.id}
+            initialName={inf.name}
+            initialNiche={inf.niche}
+            initialPersona={inf.persona}
+          />
+          <Link href={`/influencers/${inf.id}/studio`}>
+            <Button>🎬 New video</Button>
+          </Link>
+        </div>
       </header>
 
       <InfluencerClient

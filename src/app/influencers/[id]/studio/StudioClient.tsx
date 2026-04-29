@@ -5,6 +5,7 @@ import { Button } from "@/components/Button";
 import { JobProgress } from "@/components/JobProgress";
 
 type Mode = "draft" | "standard" | "premium";
+type ScriptMode = "auto" | "custom";
 
 type VideoOutput = {
   assetId: string;
@@ -33,17 +34,50 @@ export function StudioClient({
   const [duration, setDuration] = useState<5 | 8>(5);
   const [mode, setMode] = useState<Mode>("standard");
   const [variantCount, setVariantCount] = useState(1);
+  const [scriptMode, setScriptMode] = useState<ScriptMode>("auto");
+  const [custom, setCustom] = useState({
+    spokenLine: "",
+    captionText: "",
+    hashtags: "",
+    visualDirection: "",
+  });
   const [jobId, setJobId] = useState<string | null>(null);
   const [output, setOutput] = useState<VideoOutput | null>(null);
 
   const estCost = MODE_INFO[mode].perClip * variantCount;
 
+  const customValid =
+    custom.captionText.trim().length > 0 && custom.visualDirection.trim().length > 0;
+
+  const canSubmit =
+    !!hasCanonical &&
+    !jobId &&
+    (scriptMode === "auto" ? topic.trim().length > 0 : customValid);
+
   async function go() {
     setOutput(null);
+    const body: Record<string, unknown> = {
+      influencerId,
+      topic: scriptMode === "auto" ? topic : custom.visualDirection.slice(0, 80),
+      durationSec: duration,
+      mode,
+      variantCount,
+    };
+    if (scriptMode === "custom") {
+      body.customScript = {
+        spokenLine: custom.spokenLine.trim() || undefined,
+        captionText: custom.captionText.trim(),
+        visualDirection: custom.visualDirection.trim(),
+        hashtags: custom.hashtags
+          .split(/[\s,#]+/)
+          .map((h) => h.trim().toLowerCase())
+          .filter(Boolean),
+      };
+    }
     const res = await fetch("/api/videos", {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ influencerId, topic, durationSec: duration, mode, variantCount }),
+      body: JSON.stringify(body),
     });
     const { jobId } = (await res.json()) as { jobId: string };
     setJobId(jobId);
@@ -52,16 +86,78 @@ export function StudioClient({
   return (
     <div className="space-y-6">
       <div className="rounded-xl border border-border bg-panel p-5 space-y-5">
-        <label className="block">
-          <div className="text-sm font-medium mb-1.5">Topic</div>
-          <textarea
-            value={topic}
-            onChange={(e) => setTopic(e.target.value)}
-            rows={3}
-            placeholder="the one product I tell everyone to buy under $20"
-            className="w-full rounded-md border border-border bg-bg px-3 py-2 text-sm focus:border-accent outline-none resize-none"
-          />
-        </label>
+        {/* Script mode tabs */}
+        <div className="flex gap-1 p-1 rounded-lg bg-bg/60 border border-border w-fit">
+          {(["auto", "custom"] as ScriptMode[]).map((m) => (
+            <button
+              key={m}
+              onClick={() => setScriptMode(m)}
+              className={`px-3 py-1.5 text-sm rounded-md transition-colors ${
+                scriptMode === m ? "bg-panel text-text" : "text-muted hover:text-text"
+              }`}
+            >
+              {m === "auto" ? "Topic → Claude writes it" : "Write it myself"}
+            </button>
+          ))}
+        </div>
+
+        {scriptMode === "auto" ? (
+          <label className="block">
+            <div className="text-sm font-medium mb-1.5">Topic</div>
+            <textarea
+              value={topic}
+              onChange={(e) => setTopic(e.target.value)}
+              rows={3}
+              placeholder="the one product I tell everyone to buy under $20"
+              className="w-full rounded-md border border-border bg-bg px-3 py-2 text-sm focus:border-accent outline-none resize-none"
+            />
+            <div className="text-xs text-muted mt-1.5">
+              Claude writes the spoken line, caption, hashtags, and visual direction.
+            </div>
+          </label>
+        ) : (
+          <div className="space-y-3">
+            <Field
+              label="Visual direction"
+              hint="What we see — framing, lighting, micro-action. The more cinematic, the better the animation."
+            >
+              <textarea
+                value={custom.visualDirection}
+                onChange={(e) => setCustom({ ...custom, visualDirection: e.target.value })}
+                rows={3}
+                placeholder="mid-laugh, hand running through hair, late afternoon sun through a linen curtain, slight shift in weight, 35mm shallow depth of field"
+                className="w-full rounded-md border border-border bg-bg px-3 py-2 text-sm focus:border-accent outline-none resize-none"
+              />
+            </Field>
+            <Field label="Spoken line (optional)" hint="What the influencer says. Leave blank for silent.">
+              <textarea
+                value={custom.spokenLine}
+                onChange={(e) => setCustom({ ...custom, spokenLine: e.target.value })}
+                rows={2}
+                placeholder="ok the lighting in here is unreal right now"
+                className="w-full rounded-md border border-border bg-bg px-3 py-2 text-sm focus:border-accent outline-none resize-none"
+              />
+            </Field>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <Field label="Caption" hint="The text burned over the video.">
+                <input
+                  value={custom.captionText}
+                  onChange={(e) => setCustom({ ...custom, captionText: e.target.value })}
+                  placeholder="lisbon at 6pm hits different"
+                  className="w-full h-10 rounded-md border border-border bg-bg px-3 text-sm focus:border-accent outline-none"
+                />
+              </Field>
+              <Field label="Hashtags" hint="Comma or space-separated, no #.">
+                <input
+                  value={custom.hashtags}
+                  onChange={(e) => setCustom({ ...custom, hashtags: e.target.value })}
+                  placeholder="lisbon goldenhour slowliving"
+                  className="w-full h-10 rounded-md border border-border bg-bg px-3 text-sm focus:border-accent outline-none"
+                />
+              </Field>
+            </div>
+          </div>
+        )}
 
         <div>
           <div className="text-sm font-medium mb-1.5">Quality</div>
@@ -127,12 +223,7 @@ export function StudioClient({
           </div>
         </div>
 
-        <Button
-          onClick={go}
-          disabled={!topic.trim() || !hasCanonical || !!jobId}
-          size="lg"
-          className="w-full"
-        >
+        <Button onClick={go} disabled={!canSubmit} size="lg" className="w-full">
           {jobId
             ? "Generating…"
             : variantCount > 1
@@ -142,11 +233,6 @@ export function StudioClient({
         {!hasCanonical && (
           <div className="text-xs text-muted">
             Pick a canonical image on the influencer page first — it locks the face for video.
-          </div>
-        )}
-        {variantCount > 1 && (
-          <div className="text-xs text-muted">
-            One keyframe → {variantCount} different motion variants. Script + keyframe cost is shared.
           </div>
         )}
       </div>
@@ -174,7 +260,11 @@ export function StudioClient({
                   <div className="absolute top-2 left-2 text-xs bg-black/70 px-2 py-0.5 rounded">
                     v{i + 1}
                   </div>
-                  <a href={v.url} download className="absolute top-2 right-2 text-xs bg-black/70 px-2 py-0.5 rounded hover:bg-accent">
+                  <a
+                    href={v.url}
+                    download
+                    className="absolute top-2 right-2 text-xs bg-black/70 px-2 py-0.5 rounded hover:bg-accent"
+                  >
                     ⬇
                   </a>
                 </div>
@@ -185,10 +275,12 @@ export function StudioClient({
           )}
 
           <div className="p-5 space-y-3 text-sm">
-            <div>
-              <div className="text-muted text-xs">Spoken line</div>
-              <div>{output.script.spokenLine}</div>
-            </div>
+            {output.script.spokenLine && (
+              <div>
+                <div className="text-muted text-xs">Spoken line</div>
+                <div>{output.script.spokenLine}</div>
+              </div>
+            )}
             <div>
               <div className="text-muted text-xs">Caption</div>
               <div>{output.script.captionText}</div>
@@ -212,5 +304,25 @@ export function StudioClient({
         </div>
       )}
     </div>
+  );
+}
+
+function Field({
+  label,
+  hint,
+  children,
+}: {
+  label: string;
+  hint?: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <label className="block">
+      <div className="flex items-baseline justify-between mb-1.5">
+        <span className="text-sm font-medium">{label}</span>
+        {hint && <span className="text-xs text-muted">{hint}</span>}
+      </div>
+      {children}
+    </label>
   );
 }

@@ -7,10 +7,26 @@ import { generateInfluencerImages, STARTER_SCENES } from "@/lib/pipeline/images"
 import { createJob, runJob, updateJob } from "@/lib/jobs";
 import { eq } from "drizzle-orm";
 
+const ManualPersona = z.object({
+  name: z.string().min(1),
+  age: z.number(),
+  ethnicity: z.string(),
+  hair: z.string(),
+  eyes: z.string(),
+  build: z.string(),
+  style: z.string(),
+  backstory: z.string(),
+  voiceDescription: z.string(),
+  contentPillars: z.array(z.string()).min(1),
+  visualPrompt: z.string().min(10),
+  negativePrompt: z.string(),
+});
+
 const Body = z.object({
   niche: z.string().min(1),
   vibe: z.string().optional(),
   gender: z.string().optional(),
+  manualPersona: ManualPersona.optional(),
 });
 
 export const runtime = "nodejs";
@@ -25,7 +41,7 @@ export async function POST(req: NextRequest) {
   await ready();
   const body = Body.parse(await req.json());
 
-  const persona = await generatePersona(body);
+  const persona = body.manualPersona ?? (await generatePersona(body));
   const id = nanoid(12);
   await db.insert(schema.influencers).values({
     id,

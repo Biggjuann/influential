@@ -22,6 +22,13 @@ export async function generateVideo(args: {
   durationSec?: 5 | 8;
   mode?: QualityMode;
   variantCount?: number;
+  customScript?: {
+    hook?: string;
+    spokenLine?: string;
+    captionText: string;
+    hashtags?: string[];
+    visualDirection: string;
+  };
   onProgress?: (p: number, step: string) => void;
 }) {
   await ready();
@@ -44,22 +51,35 @@ export async function generateVideo(args: {
   const jobId = nanoid(12);
   const skipped: string[] = [];
 
-  args.onProgress?.(3, "writing script");
-  const script = (await generateScript({
-    persona: {
-      name: inf.persona.name,
-      voiceDescription: inf.persona.voiceDescription,
-      contentPillars: inf.persona.contentPillars,
-    },
-    topic: args.topic,
-    durationSec: dur,
-  })) as {
+  let script: {
     hook: string;
     spokenLine: string;
     visualDirection: string;
     captionText: string;
     hashtags: string[];
   };
+
+  if (args.customScript) {
+    args.onProgress?.(8, "using your script");
+    script = {
+      hook: args.customScript.hook ?? "",
+      spokenLine: args.customScript.spokenLine ?? "",
+      visualDirection: args.customScript.visualDirection,
+      captionText: args.customScript.captionText,
+      hashtags: args.customScript.hashtags ?? [],
+    };
+  } else {
+    args.onProgress?.(3, "writing script");
+    script = (await generateScript({
+      persona: {
+        name: inf.persona.name,
+        voiceDescription: inf.persona.voiceDescription,
+        contentPillars: inf.persona.contentPillars,
+      },
+      topic: args.topic,
+      durationSec: dur,
+    })) as typeof script;
+  }
 
   args.onProgress?.(12, `rendering keyframe (${mode})`);
   const keyframe = await provider.generateImage({
