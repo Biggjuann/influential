@@ -29,22 +29,30 @@ export function InfluencerClient({
   const [activeJobId, setActiveJobId] = useState<string | null>(null);
   const [scenePrompt, setScenePrompt] = useState("");
 
-  // If we don't yet have any images, the starter pack is generating. Poll for it.
+  // Poll until we have BOTH at least one image AND a canonical id. The
+  // starter pack writes images progressively and only sets canonical at the
+  // very end; if we stop polling on first image we miss the canonical update.
   useEffect(() => {
-    if (images.length > 0) return;
+    if (images.length > 0 && canonicalId) return;
     const t = setInterval(async () => {
       const res = await fetch(`/api/influencers/${influencerId}`);
       if (!res.ok) return;
-      const data = (await res.json()) as { images: Asset[]; videos: Asset[]; influencer: { canonicalImageId: string | null } };
-      if (data.images.length > 0) {
-        setImages(data.images);
-        setVideos(data.videos);
+      const data = (await res.json()) as {
+        images: Asset[];
+        videos: Asset[];
+        influencer: { canonicalImageId: string | null };
+      };
+      if (data.images.length > 0) setImages(data.images);
+      if (data.videos.length > 0) setVideos(data.videos);
+      if (data.influencer.canonicalImageId) {
         setCanonicalId(data.influencer.canonicalImageId);
+      }
+      if (data.images.length > 0 && data.influencer.canonicalImageId) {
         clearInterval(t);
       }
     }, 2000);
     return () => clearInterval(t);
-  }, [images.length, influencerId]);
+  }, [images.length, canonicalId, influencerId]);
 
   async function setCanonical(assetId: string) {
     setCanonicalId(assetId);
@@ -110,16 +118,23 @@ export function InfluencerClient({
           </div>
         )}
 
-        <div className="mt-6 flex gap-2">
-          <input
-            value={scenePrompt}
-            onChange={(e) => setScenePrompt(e.target.value)}
-            placeholder="describe a new scene — e.g. 'on a Tokyo street at night, neon reflections'"
-            className="flex-1 h-11 rounded-md border border-border bg-panel px-3 text-sm focus:border-accent outline-none"
-          />
-          <Button onClick={generateMore} disabled={!scenePrompt.trim() || !canonicalId}>
-            Generate
-          </Button>
+        <div className="mt-6 space-y-2">
+          <div className="flex gap-2">
+            <input
+              value={scenePrompt}
+              onChange={(e) => setScenePrompt(e.target.value)}
+              placeholder="describe a new scene — e.g. 'on a Tokyo street at night, neon reflections'"
+              className="flex-1 h-11 rounded-md border border-border bg-panel px-3 text-sm focus:border-accent outline-none"
+            />
+            <Button onClick={generateMore} disabled={!scenePrompt.trim() || !canonicalId}>
+              Generate
+            </Button>
+          </div>
+          {!canonicalId && (
+            <div className="text-xs text-muted">
+              Pick a canonical face above first — it locks the identity for new scenes.
+            </div>
+          )}
         </div>
 
         {activeJobId && (
