@@ -22,6 +22,10 @@ export async function generateVideo(args: {
   durationSec?: 5 | 8;
   mode?: QualityMode;
   variantCount?: number;
+  // When set, animate this existing asset directly instead of generating a
+  // fresh keyframe. Lets users pick a great image they already created
+  // (Seedream / Flux Pro / hand-curated) without paying for a re-render.
+  sourceImageId?: string;
   customScript?: {
     hook?: string;
     spokenLine?: string;
@@ -81,33 +85,46 @@ export async function generateVideo(args: {
     })) as typeof script;
   }
 
-  args.onProgress?.(12, `rendering keyframe (${mode})`);
-  const keyframe = await provider.generateImage({
-    prompt: `${inf.persona.visualPrompt}, ${script.visualDirection}`,
-    negativePrompt: inf.persona.negativePrompt,
-    aspectRatio: "9:16",
-    faceReferenceUrl: toAbsoluteUrl(canon.url),
-    count: 1,
-    mode,
-  });
-  const keyframeUrl = keyframe.images[0].url;
+  // Get the keyframe — either an existing user-picked asset, or a fresh
+  // generation via Flux + PuLID (face-locked).
+  let keyframeUrl: string;
+  if (args.sourceImageId) {
+    const src = (
+      await db.select().from(schema.assets).where(eq(schema.assets.id, args.sourceImageId)).limit(1)
+    )[0];
+    if (!src) throw new Error("source image not found");
+    if (src.influencerId !== inf.id) throw new Error("source image belongs to another influencer");
+    args.onProgress?.(15, "using selected image as keyframe");
+    keyframeUrl = toAbsoluteUrl(src.url);
+  } else {
+    args.onProgress?.(12, `rendering keyframe (${mode})`);
+    const keyframe = await provider.generateImage({
+      prompt: `${inf.persona.visualPrompt}, ${script.visualDirection}`,
+      negativePrompt: inf.persona.negativePrompt,
+      aspectRatio: "9:16",
+      faceReferenceUrl: toAbsoluteUrl(canon.url),
+      count: 1,
+      mode,
+    });
+    keyframeUrl = keyframe.images[0].url;
 
-  // Save the keyframe immediately so it isn't lost if a later step fails.
-  await persistFromUrl(keyframeUrl, {
-    key: `${inf.id}/keyframes/${jobId}.jpg`,
-    ext: "jpg",
-  })
-    .then((persisted) =>
-      db.insert(schema.assets).values({
-        id: `kf_${jobId}`,
-        influencerId: inf.id,
-        kind: "image",
-        url: persisted.url,
-        storageKey: persisted.key,
-        meta: { fromVideoJob: jobId, scene: script.visualDirection, mode },
-      }),
-    )
-    .catch((e) => console.error("keyframe persist failed (non-fatal):", e));
+    // Save the freshly-generated keyframe so it isn't lost if a later step fails.
+    await persistFromUrl(keyframeUrl, {
+      key: `${inf.id}/keyframes/${jobId}.jpg`,
+      ext: "jpg",
+    })
+      .then((persisted) =>
+        db.insert(schema.assets).values({
+          id: `kf_${jobId}`,
+          influencerId: inf.id,
+          kind: "image",
+          url: persisted.url,
+          storageKey: persisted.key,
+          meta: { fromVideoJob: jobId, scene: script.visualDirection, mode },
+        }),
+      )
+      .catch((e) => console.error("keyframe persist failed (non-fatal):", e));
+  }
 
   // Voice (optional, shared across all variants)
   let audioUrl: string | undefined;
@@ -147,7 +164,7 @@ export async function generateVideo(args: {
 
       const video = await provider.generateVideo({
         imageUrl: keyframeUrl,
-        prompt: script.visualDirection,
+        prompt: buildMotionPrompt(script.visualDirection),
         durationSec: dur,
         mode,
       });
@@ -216,6 +233,17 @@ export async function generateVideo(args: {
   } finally {
     await rm(tmp, { recursive: true, force: true });
   }
+}
+
+// Anchors what the I2V model is allowed to do. Kling/Wan/LTX default to
+// generic gestures (hands rubbing, fidgeting) when the motion is vague,
+// which reads like AI tell-tale movement. Adding explicit cinematic motion
+// cues + an anti-pattern negative steers them toward natural ambient motion.
+function buildMotionPrompt(visualDirection: string) {
+  const base = visualDirection.trim();
+  const motionHints =
+    "subtle natural motion: gentle head turn, slow blink, soft breathing, hair shifting in air, ambient camera drift, cinematic 24fps";
+  return `${base}. ${motionHints}. avoid: rubbing hands, repetitive gestures, exaggerated facial expressions, morphing limbs.`;
 }
 
 function asMessage(e: unknown) {

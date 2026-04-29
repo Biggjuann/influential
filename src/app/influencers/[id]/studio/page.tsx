@@ -1,6 +1,6 @@
 import { notFound } from "next/navigation";
 import { db, schema, ready } from "@/lib/db";
-import { eq } from "drizzle-orm";
+import { eq, desc, and } from "drizzle-orm";
 import { StudioClient } from "./StudioClient";
 
 export const dynamic = "force-dynamic";
@@ -18,6 +18,13 @@ export default async function StudioPage({ params }: { params: Promise<{ id: str
       )[0]
     : null;
 
+  const images = await db
+    .select()
+    .from(schema.assets)
+    .where(and(eq(schema.assets.influencerId, id), eq(schema.assets.kind, "image")))
+    .orderBy(desc(schema.assets.createdAt))
+    .limit(12);
+
   return (
     <div className="grid grid-cols-1 lg:grid-cols-[1fr_360px] gap-8">
       <div>
@@ -27,7 +34,11 @@ export default async function StudioPage({ params }: { params: Promise<{ id: str
           Give a topic. Claude writes the script, F5-TTS voices it, Wan animates a keyframe, and
           LatentSync syncs the lips. Output is 1080×1920 with burned captions.
         </p>
-        <StudioClient influencerId={inf.id} hasCanonical={!!canonical} />
+        <StudioClient
+          influencerId={inf.id}
+          hasCanonical={!!canonical}
+          galleryImages={images.map((i) => ({ id: i.id, url: i.url }))}
+        />
       </div>
 
       <aside className="rounded-xl border border-border bg-panel p-4 h-fit lg:sticky lg:top-24">

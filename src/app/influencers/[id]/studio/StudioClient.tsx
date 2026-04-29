@@ -25,9 +25,11 @@ const MODE_INFO: Record<Mode, { label: string; perClip: number; desc: string }> 
 export function StudioClient({
   influencerId,
   hasCanonical,
+  galleryImages,
 }: {
   influencerId: string;
   hasCanonical: boolean;
+  galleryImages: { id: string; url: string }[];
 }) {
   const router = useRouter();
   const [topic, setTopic] = useState("");
@@ -35,6 +37,7 @@ export function StudioClient({
   const [mode, setMode] = useState<Mode>("standard");
   const [variantCount, setVariantCount] = useState(1);
   const [scriptMode, setScriptMode] = useState<ScriptMode>("auto");
+  const [sourceImageId, setSourceImageId] = useState<string | null>(null);
   const [custom, setCustom] = useState({
     spokenLine: "",
     captionText: "",
@@ -44,7 +47,12 @@ export function StudioClient({
   const [jobId, setJobId] = useState<string | null>(null);
   const [output, setOutput] = useState<VideoOutput | null>(null);
 
-  const estCost = MODE_INFO[mode].perClip * variantCount;
+  // Rough split: keyframe ~30%, animation ~70% of per-clip cost. When the
+  // user provides their own keyframe, only the animation step runs per variant.
+  const perClip = MODE_INFO[mode].perClip;
+  const estCost = sourceImageId
+    ? perClip * 0.7 * variantCount
+    : perClip * variantCount;
 
   const customValid =
     custom.captionText.trim().length > 0 && custom.visualDirection.trim().length > 0;
@@ -62,6 +70,7 @@ export function StudioClient({
       durationSec: duration,
       mode,
       variantCount,
+      sourceImageId: sourceImageId ?? undefined,
     };
     if (scriptMode === "custom") {
       body.customScript = {
@@ -156,6 +165,49 @@ export function StudioClient({
                 />
               </Field>
             </div>
+          </div>
+        )}
+
+        {galleryImages.length > 0 && (
+          <div>
+            <div className="flex items-baseline justify-between mb-1.5">
+              <span className="text-sm font-medium">Keyframe</span>
+              <span className="text-xs text-muted">
+                Pick an existing image to animate, or auto-generate one (saves 1 image gen step).
+              </span>
+            </div>
+            <div className="flex gap-2 overflow-x-auto pb-1">
+              <button
+                onClick={() => setSourceImageId(null)}
+                className={`shrink-0 w-20 aspect-[9/16] rounded-md border-2 grid place-items-center text-xs text-center px-1 transition-colors ${
+                  sourceImageId === null
+                    ? "border-accent bg-accent/10"
+                    : "border-border hover:border-muted"
+                }`}
+              >
+                Auto-generate
+              </button>
+              {galleryImages.map((img) => (
+                <button
+                  key={img.id}
+                  onClick={() => setSourceImageId(img.id)}
+                  className={`shrink-0 w-20 aspect-[9/16] rounded-md overflow-hidden border-2 transition-colors ${
+                    sourceImageId === img.id
+                      ? "border-accent"
+                      : "border-transparent hover:border-muted"
+                  }`}
+                >
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img src={img.url} alt="" className="w-full h-full object-cover" />
+                </button>
+              ))}
+            </div>
+            {sourceImageId && (
+              <div className="text-xs text-muted mt-1.5">
+                Quality / engine pickers below are ignored when using an existing image — only
+                the animation step runs.
+              </div>
+            )}
           </div>
         )}
 
