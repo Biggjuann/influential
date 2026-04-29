@@ -45,8 +45,11 @@ export function JobProgress({
 
   if (job.status === "error") {
     return (
-      <div className="rounded-md border border-red-500/30 bg-red-500/10 p-3 text-sm text-red-300">
-        {job.error ?? "unknown error"}
+      <div className="rounded-md border border-red-500/30 bg-red-500/10 p-3 text-sm text-red-300 space-y-1">
+        <div className="font-medium">Generation failed</div>
+        <div className="font-mono text-xs whitespace-pre-wrap break-words">
+          {job.error ?? "unknown error"}
+        </div>
       </div>
     );
   }
