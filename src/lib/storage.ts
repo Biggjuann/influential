@@ -2,20 +2,29 @@ import "server-only";
 import { mkdir, writeFile, readFile, stat } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import { join } from "node:path";
-import { S3Client, PutObjectCommand } from "@aws-sdk/client-s3";
+import { Readable } from "node:stream";
+import { S3Client, PutObjectCommand, GetObjectCommand } from "@aws-sdk/client-s3";
 
 // Storage layer: S3-compatible object store (Cloudflare R2, AWS S3, Backblaze, etc)
 // for production, with a local filesystem fallback for `npm run dev` without
-// any S3 credentials. Returned URLs are publicly fetchable so fal.ai can pull
-// reference assets back during multi-step pipelines.
+// any S3 credentials.
+//
+// All asset URLs returned from this layer are relative paths under
+// /api/assets/<key>, served by the corresponding API route in this app. This
+// means:
+//   - The bucket does NOT need to be publicly accessible — we read from it
+//     server-side using credentials and proxy the bytes to whoever asks.
+//   - fal.ai (or any external service) fetches via Railway's public domain,
+//     which is always reachable, so there's no class of "is the bucket public"
+//     misconfiguration to debug.
+//   - Switching between R2 and FS is invisible to callers.
 
 const S3_BUCKET = process.env.S3_BUCKET;
-const S3_PUBLIC_URL = process.env.S3_PUBLIC_URL?.replace(/\/$/, "");
-const useS3 = !!S3_BUCKET && !!S3_PUBLIC_URL;
+const useS3 = !!S3_BUCKET;
 
 const s3 = useS3
   ? new S3Client({
-      endpoint: process.env.S3_ENDPOINT, // omit for AWS S3, set for R2/etc
+      endpoint: process.env.S3_ENDPOINT,
       region: process.env.S3_REGION ?? "auto",
       credentials:
         process.env.S3_ACCESS_KEY_ID && process.env.S3_SECRET_ACCESS_KEY
@@ -61,7 +70,7 @@ async function readSourceUrl(url: string): Promise<Buffer> {
   return Buffer.from(await res.arrayBuffer());
 }
 
-async function writeBuffer(key: string, body: Buffer, contentType: string): Promise<string> {
+async function writeBuffer(key: string, body: Buffer, contentType: string): Promise<void> {
   if (useS3 && s3) {
     await s3.send(
       new PutObjectCommand({
@@ -72,12 +81,14 @@ async function writeBuffer(key: string, body: Buffer, contentType: string): Prom
         CacheControl: "public, max-age=31536000, immutable",
       }),
     );
-    return `${S3_PUBLIC_URL}/${key}`;
+    return;
   }
-  // FS fallback
   const path = join(FS_ROOT, key);
   await mkdir(join(path, ".."), { recursive: true });
   await writeFile(path, body);
+}
+
+function publicUrlFor(key: string) {
   return `/api/assets/${key}`;
 }
 
@@ -87,8 +98,8 @@ export async function persistFromUrl(
   opts: { key: string; ext: string },
 ): Promise<{ url: string; key: string }> {
   const buf = await readSourceUrl(url);
-  const finalUrl = await writeBuffer(opts.key, buf, contentTypeFor(opts.ext));
-  return { url: finalUrl, key: opts.key };
+  await writeBuffer(opts.key, buf, contentTypeFor(opts.ext));
+  return { url: publicUrlFor(opts.key), key: opts.key };
 }
 
 /** Persist a local file path (e.g. ffmpeg output) into storage. */
@@ -97,15 +108,36 @@ export async function persistFromFile(
   opts: { key: string; ext: string },
 ): Promise<{ url: string; key: string }> {
   const buf = await readFile(path);
-  const finalUrl = await writeBuffer(opts.key, buf, contentTypeFor(opts.ext));
-  return { url: finalUrl, key: opts.key };
+  await writeBuffer(opts.key, buf, contentTypeFor(opts.ext));
+  return { url: publicUrlFor(opts.key), key: opts.key };
 }
 
-/** Read a file from FS-mode storage (used by /api/assets fallback route). */
-export async function readFromFsKey(key: string) {
+/** Read an asset for the /api/assets proxy route, regardless of backend. */
+export async function readAssetStream(key: string): Promise<{
+  stream: ReadableStream;
+  size?: number;
+  contentType: string;
+}> {
+  const ext = key.split(".").pop()?.toLowerCase() ?? "";
+  const ct = contentTypeFor(ext);
+
+  if (useS3 && s3) {
+    const obj = await s3.send(new GetObjectCommand({ Bucket: S3_BUCKET, Key: key }));
+    if (!obj.Body) throw new Error("s3: empty body");
+    const nodeStream = obj.Body as unknown as NodeJS.ReadableStream;
+    const stream = Readable.toWeb(Readable.from(nodeStream)) as ReadableStream;
+    return {
+      stream,
+      size: obj.ContentLength,
+      contentType: obj.ContentType ?? ct,
+    };
+  }
+
   const path = join(FS_ROOT, key);
   const info = await stat(path);
-  return { path, size: info.size };
+  const { createReadStream } = await import("node:fs");
+  const stream = Readable.toWeb(createReadStream(path)) as ReadableStream;
+  return { stream, size: info.size, contentType: ct };
 }
 
 export const storageMode = useS3 ? "s3" : "fs";
