@@ -7,15 +7,12 @@ import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { getProvider } from "../providers";
+import type { QualityMode } from "../providers/types";
 import { persistFromFile, persistFromUrl } from "../storage";
 import { toAbsoluteUrl } from "../publicUrl";
 import { generateScript } from "../providers/anthropic";
 import { burnCaptionsAndCrop } from "./postprocess";
 
-// Step toggles: voice + lipsync are off by default because they're the most
-// expensive + slowest + most fragile parts of the chain. The minimum viable
-// output (script + keyframe + animation + caption) is enough for many TikTok
-// formats. Flip these on once you have a working baseline.
 const VOICE_ENABLED = process.env.VOICE_ENABLED === "1";
 const LIPSYNC_ENABLED = process.env.LIPSYNC_ENABLED === "1";
 
@@ -23,10 +20,14 @@ export async function generateVideo(args: {
   influencerId: string;
   topic: string;
   durationSec?: 5 | 8;
+  mode?: QualityMode;
+  variantCount?: number;
   onProgress?: (p: number, step: string) => void;
 }) {
   await ready();
   const dur = args.durationSec ?? 5;
+  const mode: QualityMode = args.mode ?? "standard";
+  const variantCount = Math.max(1, Math.min(5, args.variantCount ?? 1));
 
   const inf = (
     await db.select().from(schema.influencers).where(eq(schema.influencers.id, args.influencerId)).limit(1)
@@ -40,10 +41,10 @@ export async function generateVideo(args: {
   if (!canon) throw new Error("canonical image asset missing");
 
   const provider = getProvider();
-  const id = nanoid(12);
+  const jobId = nanoid(12);
   const skipped: string[] = [];
 
-  args.onProgress?.(5, "writing script");
+  args.onProgress?.(3, "writing script");
   const script = (await generateScript({
     persona: {
       name: inf.persona.name,
@@ -60,39 +61,39 @@ export async function generateVideo(args: {
     hashtags: string[];
   };
 
-  args.onProgress?.(20, "rendering keyframe");
+  args.onProgress?.(12, `rendering keyframe (${mode})`);
   const keyframe = await provider.generateImage({
     prompt: `${inf.persona.visualPrompt}, ${script.visualDirection}`,
     negativePrompt: inf.persona.negativePrompt,
     aspectRatio: "9:16",
     faceReferenceUrl: toAbsoluteUrl(canon.url),
     count: 1,
+    mode,
   });
   const keyframeUrl = keyframe.images[0].url;
 
-  // Save the keyframe as its own asset RIGHT AWAY so this success isn't lost
-  // if a later step blows up.
+  // Save the keyframe immediately so it isn't lost if a later step fails.
   await persistFromUrl(keyframeUrl, {
-    key: `${inf.id}/keyframes/${id}.jpg`,
+    key: `${inf.id}/keyframes/${jobId}.jpg`,
     ext: "jpg",
   })
     .then((persisted) =>
       db.insert(schema.assets).values({
-        id: `kf_${id}`,
+        id: `kf_${jobId}`,
         influencerId: inf.id,
         kind: "image",
         url: persisted.url,
         storageKey: persisted.key,
-        meta: { fromVideoJob: id, scene: script.visualDirection },
+        meta: { fromVideoJob: jobId, scene: script.visualDirection, mode },
       }),
     )
     .catch((e) => console.error("keyframe persist failed (non-fatal):", e));
 
-  // Voice: optional, swallow failures so they don't kill the whole job.
+  // Voice (optional, shared across all variants)
   let audioUrl: string | undefined;
   if (VOICE_ENABLED) {
     try {
-      args.onProgress?.(40, "voicing line");
+      args.onProgress?.(20, "voicing line");
       const tts = await provider.tts({
         text: script.spokenLine,
         voiceRefUrl: inf.voiceRefUrl ?? undefined,
@@ -106,64 +107,92 @@ export async function generateVideo(args: {
     skipped.push("voice (VOICE_ENABLED=0)");
   }
 
-  args.onProgress?.(55, "animating clip");
-  const video = await provider.generateVideo({
-    imageUrl: keyframeUrl,
-    prompt: script.visualDirection,
-    durationSec: dur,
-  });
-
-  // Lipsync: only if both voice succeeded AND lipsync is enabled. Optional.
-  let finalRemoteUrl = video.videoUrl;
-  if (LIPSYNC_ENABLED && audioUrl) {
-    try {
-      args.onProgress?.(80, "syncing lips");
-      const synced = await provider.lipsync({ videoUrl: video.videoUrl, audioUrl });
-      finalRemoteUrl = synced.videoUrl;
-    } catch (e) {
-      skipped.push(`lipsync (${asMessage(e)})`);
-    }
-  } else if (LIPSYNC_ENABLED && !audioUrl) {
-    skipped.push("lipsync (no audio)");
-  } else {
-    skipped.push("lipsync (LIPSYNC_ENABLED=0)");
-  }
-
-  args.onProgress?.(90, "post-processing");
+  // Animate the keyframe N times to get N video variants. Each variant is its
+  // own asset row so the user can pick a favorite without re-spending on
+  // script/keyframe/voice.
   const tmp = await mkdtemp(join(tmpdir(), "influential-"));
+  const created: { assetId: string; url: string }[] = [];
   try {
-    const inputPath = await materializeToDisk(finalRemoteUrl, join(tmp, "in.mp4"));
-    const outputPath = join(tmp, "out.mp4");
-    await burnCaptionsAndCrop({
-      inputPath,
-      outputPath,
-      captionText: script.captionText,
-    });
+    const animationStart = 25;
+    const animationEnd = 92;
+    const stepSpan = (animationEnd - animationStart) / variantCount;
 
-    const persisted = await persistFromFile(outputPath, {
-      key: `${inf.id}/videos/${id}.mp4`,
-      ext: "mp4",
-    });
+    for (let i = 0; i < variantCount; i++) {
+      const variantId = variantCount === 1 ? jobId : `${jobId}_${i + 1}`;
+      const baseProgress = animationStart + i * stepSpan;
+      args.onProgress?.(
+        Math.round(baseProgress),
+        `animating ${i + 1}/${variantCount}`,
+      );
 
-    await db.insert(schema.assets).values({
-      id,
-      influencerId: inf.id,
-      kind: "video",
-      url: persisted.url,
-      storageKey: persisted.key,
-      meta: {
-        topic: args.topic,
-        script,
+      const video = await provider.generateVideo({
+        imageUrl: keyframeUrl,
+        prompt: script.visualDirection,
         durationSec: dur,
-        keyframeUrl,
-        skipped,
-        hadAudio: !!audioUrl,
-        hadLipsync: finalRemoteUrl !== video.videoUrl,
-      },
-    });
+        mode,
+      });
+
+      let finalRemoteUrl = video.videoUrl;
+      if (LIPSYNC_ENABLED && audioUrl) {
+        try {
+          args.onProgress?.(
+            Math.round(baseProgress + stepSpan * 0.6),
+            `syncing lips ${i + 1}/${variantCount}`,
+          );
+          const synced = await provider.lipsync({ videoUrl: video.videoUrl, audioUrl });
+          finalRemoteUrl = synced.videoUrl;
+        } catch (e) {
+          skipped.push(`lipsync v${i + 1} (${asMessage(e)})`);
+        }
+      }
+
+      const inputPath = await materializeToDisk(finalRemoteUrl, join(tmp, `in_${i}.mp4`));
+      const outputPath = join(tmp, `out_${i}.mp4`);
+      await burnCaptionsAndCrop({
+        inputPath,
+        outputPath,
+        captionText: script.captionText,
+      });
+
+      const persisted = await persistFromFile(outputPath, {
+        key: `${inf.id}/videos/${variantId}.mp4`,
+        ext: "mp4",
+      });
+
+      await db.insert(schema.assets).values({
+        id: variantId,
+        influencerId: inf.id,
+        kind: "video",
+        url: persisted.url,
+        storageKey: persisted.key,
+        meta: {
+          topic: args.topic,
+          script,
+          durationSec: dur,
+          keyframeUrl,
+          mode,
+          variantIndex: variantCount > 1 ? i + 1 : undefined,
+          variantOf: variantCount > 1 ? jobId : undefined,
+          hadAudio: !!audioUrl,
+          hadLipsync: finalRemoteUrl !== video.videoUrl,
+        },
+      });
+
+      created.push({ assetId: variantId, url: persisted.url });
+    }
+
+    if (LIPSYNC_ENABLED && !audioUrl) skipped.push("lipsync (no audio)");
+    else if (!LIPSYNC_ENABLED) skipped.push("lipsync (LIPSYNC_ENABLED=0)");
 
     args.onProgress?.(100, "done");
-    return { assetId: id, url: persisted.url, script, skipped };
+    return {
+      assetId: created[0].assetId,
+      url: created[0].url,
+      script,
+      mode,
+      skipped,
+      variants: created,
+    };
   } finally {
     await rm(tmp, { recursive: true, force: true });
   }

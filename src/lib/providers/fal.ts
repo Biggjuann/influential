@@ -16,19 +16,23 @@ if (process.env.FAL_KEY) {
   fal.config({ credentials: process.env.FAL_KEY });
 }
 
-// Endpoint paths are configurable so you can swap models without redeploying
-// when fal.ai publishes new versions, deprecates routes, or you want to test
-// alternates (e.g. Kling vs Wan vs LTX for video).
-//
-// Default video model is Kling 1.6 standard — it's much faster and more
-// reliable on fal than Wan-pro (~30-60s vs 3-8 min) at comparable quality
-// for short-form vertical clips. Override with FAL_ENDPOINT_VIDEO_I2V if you
-// want to trade speed for higher fidelity.
+// Endpoints are configurable per quality mode. Costs as of late 2025:
+//   draft    ~$0.05/clip — Flux schnell + LTX-Video, fast iteration
+//   standard ~$0.20/clip — Flux dev + Kling 1.6 standard (default)
+//   premium  ~$0.40/clip — Flux dev + Wan-pro, slower but highest fidelity
 const ENDPOINTS = {
-  flux: process.env.FAL_ENDPOINT_FLUX ?? "fal-ai/flux/dev",
+  flux: {
+    draft: process.env.FAL_ENDPOINT_FLUX_DRAFT ?? "fal-ai/flux/schnell",
+    standard: process.env.FAL_ENDPOINT_FLUX ?? "fal-ai/flux/dev",
+    premium: process.env.FAL_ENDPOINT_FLUX_PREMIUM ?? "fal-ai/flux/dev",
+  },
   fluxId: process.env.FAL_ENDPOINT_FLUX_ID ?? "fal-ai/flux-pulid",
-  videoI2V:
-    process.env.FAL_ENDPOINT_VIDEO_I2V ?? "fal-ai/kling-video/v1.6/standard/image-to-video",
+  videoI2V: {
+    draft: process.env.FAL_ENDPOINT_VIDEO_I2V_DRAFT ?? "fal-ai/ltx-video-v095/image-to-video",
+    standard:
+      process.env.FAL_ENDPOINT_VIDEO_I2V ?? "fal-ai/kling-video/v1.6/standard/image-to-video",
+    premium: process.env.FAL_ENDPOINT_VIDEO_I2V_PREMIUM ?? "fal-ai/wan-pro/image-to-video",
+  },
   ttsClone: process.env.FAL_ENDPOINT_TTS_CLONE ?? "fal-ai/f5-tts",
   ttsFallback: process.env.FAL_ENDPOINT_TTS_FALLBACK ?? "fal-ai/kokoro/american-english",
   lipsync: process.env.FAL_ENDPOINT_LIPSYNC ?? "fal-ai/latentsync",
@@ -105,8 +109,14 @@ type FluxResult = {
 async function falImage(input: ImageGenInput): Promise<ImageGenOutput> {
   const size = SIZES[input.aspectRatio ?? "9:16"];
   const count = input.count ?? 1;
+  const mode = input.mode ?? "standard";
 
-  if (input.faceReferenceUrl) {
+  // PuLID is the most expensive image step. Skip it in draft mode — face will
+  // be "in the right family" via the visualPrompt without being pixel-locked
+  // to canonical, which is the right tradeoff while iterating on script/scene.
+  const useFaceLock = mode !== "draft" && !!input.faceReferenceUrl;
+
+  if (useFaceLock) {
     const data = await call<FluxResult>(ENDPOINTS.fluxId, {
       prompt: input.prompt,
       reference_image_url: input.faceReferenceUrl,
@@ -118,7 +128,7 @@ async function falImage(input: ImageGenInput): Promise<ImageGenOutput> {
     return { images: data.images.map((img) => ({ ...img, seed: data.seed })) };
   }
 
-  const data = await call<FluxResult>(ENDPOINTS.flux, {
+  const data = await call<FluxResult>(ENDPOINTS.flux[mode], {
     prompt: input.prompt,
     image_size: { width: size.width, height: size.height },
     num_images: count,
@@ -129,8 +139,9 @@ async function falImage(input: ImageGenInput): Promise<ImageGenOutput> {
 }
 
 async function falVideo(input: VideoGenInput): Promise<VideoGenOutput> {
+  const mode = input.mode ?? "standard";
   const data = await call<{ video: { url: string; width?: number; height?: number } }>(
-    ENDPOINTS.videoI2V,
+    ENDPOINTS.videoI2V[mode],
     {
       image_url: input.imageUrl,
       prompt: input.prompt,

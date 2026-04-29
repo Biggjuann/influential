@@ -4,11 +4,21 @@ import { useRouter } from "next/navigation";
 import { Button } from "@/components/Button";
 import { JobProgress } from "@/components/JobProgress";
 
+type Mode = "draft" | "standard" | "premium";
+
 type VideoOutput = {
   assetId: string;
   url: string;
   script: { hook: string; spokenLine: string; captionText: string; hashtags: string[] };
+  mode?: Mode;
   skipped?: string[];
+  variants?: { assetId: string; url: string }[];
+};
+
+const MODE_INFO: Record<Mode, { label: string; perClip: number; desc: string }> = {
+  draft: { label: "Draft", perClip: 0.05, desc: "Flux schnell + LTX-Video — fast, iteration-friendly" },
+  standard: { label: "Standard", perClip: 0.2, desc: "Flux dev + Kling 1.6 — current default" },
+  premium: { label: "Premium", perClip: 0.4, desc: "Flux dev + Wan-pro — slowest, highest fidelity" },
 };
 
 export function StudioClient({
@@ -21,15 +31,19 @@ export function StudioClient({
   const router = useRouter();
   const [topic, setTopic] = useState("");
   const [duration, setDuration] = useState<5 | 8>(5);
+  const [mode, setMode] = useState<Mode>("standard");
+  const [variantCount, setVariantCount] = useState(1);
   const [jobId, setJobId] = useState<string | null>(null);
   const [output, setOutput] = useState<VideoOutput | null>(null);
+
+  const estCost = MODE_INFO[mode].perClip * variantCount;
 
   async function go() {
     setOutput(null);
     const res = await fetch("/api/videos", {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ influencerId, topic, durationSec: duration }),
+      body: JSON.stringify({ influencerId, topic, durationSec: duration, mode, variantCount }),
     });
     const { jobId } = (await res.json()) as { jobId: string };
     setJobId(jobId);
@@ -37,7 +51,7 @@ export function StudioClient({
 
   return (
     <div className="space-y-6">
-      <div className="rounded-xl border border-border bg-panel p-5 space-y-4">
+      <div className="rounded-xl border border-border bg-panel p-5 space-y-5">
         <label className="block">
           <div className="text-sm font-medium mb-1.5">Topic</div>
           <textarea
@@ -49,27 +63,90 @@ export function StudioClient({
           />
         </label>
 
-        <div className="flex items-center gap-3">
-          <span className="text-sm text-muted">Duration</span>
-          {[5, 8].map((d) => (
-            <button
-              key={d}
-              onClick={() => setDuration(d as 5 | 8)}
-              className={`h-8 px-3 text-sm rounded-md border transition-colors ${
-                duration === d ? "border-accent bg-accent/15" : "border-border hover:bg-border/40"
-              }`}
-            >
-              {d}s
-            </button>
-          ))}
+        <div>
+          <div className="text-sm font-medium mb-1.5">Quality</div>
+          <div className="grid grid-cols-3 gap-2">
+            {(Object.keys(MODE_INFO) as Mode[]).map((m) => (
+              <button
+                key={m}
+                onClick={() => setMode(m)}
+                className={`text-left rounded-md border p-3 transition-colors ${
+                  mode === m ? "border-accent bg-accent/10" : "border-border hover:bg-border/40"
+                }`}
+              >
+                <div className="flex items-baseline justify-between">
+                  <span className="text-sm font-medium">{MODE_INFO[m].label}</span>
+                  <span className="text-xs text-muted tabular-nums">
+                    ~${MODE_INFO[m].perClip.toFixed(2)}
+                  </span>
+                </div>
+                <div className="text-xs text-muted mt-1 leading-snug">{MODE_INFO[m].desc}</div>
+              </button>
+            ))}
+          </div>
         </div>
 
-        <Button onClick={go} disabled={!topic.trim() || !hasCanonical || !!jobId} size="lg" className="w-full">
-          {jobId ? "Generating…" : "Generate video"}
+        <div className="flex flex-wrap items-center gap-6">
+          <div>
+            <div className="text-sm font-medium mb-1.5">Duration</div>
+            <div className="flex items-center gap-2">
+              {[5, 8].map((d) => (
+                <button
+                  key={d}
+                  onClick={() => setDuration(d as 5 | 8)}
+                  className={`h-9 px-3 text-sm rounded-md border transition-colors ${
+                    duration === d ? "border-accent bg-accent/15" : "border-border hover:bg-border/40"
+                  }`}
+                >
+                  {d}s
+                </button>
+              ))}
+            </div>
+          </div>
+          <div>
+            <div className="text-sm font-medium mb-1.5">Variants</div>
+            <div className="flex items-center gap-2">
+              {[1, 3, 5].map((n) => (
+                <button
+                  key={n}
+                  onClick={() => setVariantCount(n)}
+                  className={`h-9 px-3 text-sm rounded-md border transition-colors ${
+                    variantCount === n
+                      ? "border-accent bg-accent/15"
+                      : "border-border hover:bg-border/40"
+                  }`}
+                >
+                  ×{n}
+                </button>
+              ))}
+            </div>
+          </div>
+          <div className="ml-auto text-right">
+            <div className="text-xs text-muted">Estimated cost</div>
+            <div className="text-lg font-medium tabular-nums">~${estCost.toFixed(2)}</div>
+          </div>
+        </div>
+
+        <Button
+          onClick={go}
+          disabled={!topic.trim() || !hasCanonical || !!jobId}
+          size="lg"
+          className="w-full"
+        >
+          {jobId
+            ? "Generating…"
+            : variantCount > 1
+              ? `Generate ${variantCount} variants`
+              : "Generate video"}
         </Button>
         {!hasCanonical && (
           <div className="text-xs text-muted">
             Pick a canonical image on the influencer page first — it locks the face for video.
+          </div>
+        )}
+        {variantCount > 1 && (
+          <div className="text-xs text-muted">
+            One keyframe → {variantCount} different motion variants. Script + keyframe cost is shared.
           </div>
         )}
       </div>
@@ -89,7 +166,24 @@ export function StudioClient({
 
       {output && (
         <div className="rounded-xl border border-border bg-panel overflow-hidden">
-          <video src={output.url} controls autoPlay className="aspect-[9/16] w-full bg-black" />
+          {output.variants && output.variants.length > 1 ? (
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2 p-2 bg-black">
+              {output.variants.map((v, i) => (
+                <div key={v.assetId} className="relative">
+                  <video src={v.url} controls className="aspect-[9/16] w-full bg-black rounded" />
+                  <div className="absolute top-2 left-2 text-xs bg-black/70 px-2 py-0.5 rounded">
+                    v{i + 1}
+                  </div>
+                  <a href={v.url} download className="absolute top-2 right-2 text-xs bg-black/70 px-2 py-0.5 rounded hover:bg-accent">
+                    ⬇
+                  </a>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <video src={output.url} controls autoPlay className="aspect-[9/16] w-full bg-black" />
+          )}
+
           <div className="p-5 space-y-3 text-sm">
             <div>
               <div className="text-muted text-xs">Spoken line</div>
@@ -107,13 +201,13 @@ export function StudioClient({
               ))}
             </div>
             {output.skipped && output.skipped.length > 0 && (
-              <div className="text-xs text-muted">
-                Skipped: {output.skipped.join(", ")}
-              </div>
+              <div className="text-xs text-muted">Skipped: {output.skipped.join(", ")}</div>
             )}
-            <a href={output.url} download className="inline-block">
-              <Button variant="secondary" size="sm">⬇ Download MP4</Button>
-            </a>
+            {!output.variants || output.variants.length === 1 ? (
+              <a href={output.url} download className="inline-block">
+                <Button variant="secondary" size="sm">⬇ Download MP4</Button>
+              </a>
+            ) : null}
           </div>
         </div>
       )}

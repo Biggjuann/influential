@@ -1,3 +1,5 @@
+export type QualityMode = "draft" | "standard" | "premium";
+
 export type ImageGenInput = {
   prompt: string;
   negativePrompt?: string;
@@ -5,6 +7,7 @@ export type ImageGenInput = {
   faceReferenceUrl?: string;
   seed?: number;
   count?: number;
+  mode?: QualityMode;
 };
 
 export type ImageGenOutput = {
@@ -15,6 +18,7 @@ export type VideoGenInput = {
   imageUrl: string;
   prompt: string;
   durationSec: 5 | 8;
+  mode?: QualityMode;
 };
 
 export type VideoGenOutput = {
