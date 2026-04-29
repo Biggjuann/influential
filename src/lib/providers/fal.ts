@@ -121,7 +121,7 @@ async function falImage(input: ImageGenInput): Promise<ImageGenOutput> {
     // resemble the reference's face AND lighting/composition — bad when the
     // user wants a different scene. ~0.85 keeps the identity recognizable
     // while letting the prompt actually drive the look.
-    const idWeight = Number(process.env.FAL_PULID_ID_WEIGHT ?? 0.85);
+    const idWeight = Number(process.env.FAL_PULID_ID_WEIGHT ?? 0.9);
     const data = await call<FluxResult>(ENDPOINTS.fluxId, {
       prompt: input.prompt,
       reference_image_url: input.faceReferenceUrl,

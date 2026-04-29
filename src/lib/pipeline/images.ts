@@ -14,10 +14,21 @@ export type SceneSpec = {
   expression?: string;
 };
 
+// Photorealism anchor prepended to every gallery generation. Without this,
+// Flux drifts toward illustration when the user's scene is exotic (horseback,
+// neon streets, beaches etc) — the photoreal cues at the end of visualPrompt
+// don't survive the journey through scene tokens at the front.
+const PHOTOREAL_PREFIX =
+  "cinematic photograph, photorealistic, 35mm film, professional editorial photography, sharp focus, natural skin texture, detailed";
+
+// Always-applied negative cues that fight common Flux failure modes
+// (cartoony, plastic, distorted faces, generic stock-photo look).
+const HARD_NEGATIVE =
+  "cartoon, anime, illustration, 3d render, cgi, plastic skin, deformed face, extra fingers, lowres, watermark, text, stock photo, oversaturated, bad anatomy";
+
 function buildPrompt(persona: Persona, scene: SceneSpec) {
-  // Ordering matters: image models weight the front of the prompt heavily, so
-  // we lead with the SCENE (what the user is asking for) and follow with the
-  // character traits that lock identity. Scene-last loses to character traits.
+  // Ordering matters: image models weight the front of the prompt heavily.
+  // Order: photoreal anchor → scene → character lock → final style cues.
   const sceneBits = [
     scene.scene,
     scene.outfit ? `wearing ${scene.outfit}` : "",
@@ -26,7 +37,12 @@ function buildPrompt(persona: Persona, scene: SceneSpec) {
   ]
     .filter(Boolean)
     .join(", ");
-  return [sceneBits, persona.visualPrompt].filter(Boolean).join(", ");
+  return [PHOTOREAL_PREFIX, sceneBits, persona.visualPrompt].filter(Boolean).join(", ");
+}
+
+function buildNegative(persona: Persona) {
+  const user = (persona.negativePrompt ?? "").trim();
+  return user ? `${user}, ${HARD_NEGATIVE}` : HARD_NEGATIVE;
 }
 
 export async function generateInfluencerImages(args: {
@@ -58,7 +74,7 @@ export async function generateInfluencerImages(args: {
 
     const out = await provider.generateImage({
       prompt: buildPrompt(inf.persona, scene),
-      negativePrompt: inf.persona.negativePrompt,
+      negativePrompt: buildNegative(inf.persona),
       aspectRatio: "9:16",
       faceReferenceUrl: referenceUrl,
       count: 1,
