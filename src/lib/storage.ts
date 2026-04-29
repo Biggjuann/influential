@@ -1,9 +1,9 @@
 import "server-only";
-import { mkdir, writeFile, readFile, stat } from "node:fs/promises";
+import { mkdir, writeFile, readFile, stat, unlink } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import { join } from "node:path";
 import { Readable } from "node:stream";
-import { S3Client, PutObjectCommand, GetObjectCommand } from "@aws-sdk/client-s3";
+import { S3Client, PutObjectCommand, GetObjectCommand, DeleteObjectCommand } from "@aws-sdk/client-s3";
 
 // Storage layer: S3-compatible object store (Cloudflare R2, AWS S3, Backblaze, etc)
 // for production, with a local filesystem fallback for `npm run dev` without
@@ -138,6 +138,24 @@ export async function readAssetStream(key: string): Promise<{
   const { createReadStream } = await import("node:fs");
   const stream = Readable.toWeb(createReadStream(path)) as ReadableStream;
   return { stream, size: info.size, contentType: ct };
+}
+
+/** Delete a stored object by key. Best-effort: missing keys are ignored. */
+export async function deleteByKey(key: string): Promise<void> {
+  if (!key) return;
+  if (useS3 && s3) {
+    try {
+      await s3.send(new DeleteObjectCommand({ Bucket: S3_BUCKET, Key: key }));
+    } catch (e) {
+      console.warn("s3 delete failed (non-fatal):", key, e);
+    }
+    return;
+  }
+  try {
+    await unlink(join(FS_ROOT, key));
+  } catch {
+    // ignore missing files
+  }
 }
 
 export const storageMode = useS3 ? "s3" : "fs";

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { db, schema, ready } from "@/lib/db";
 import { eq, desc } from "drizzle-orm";
 import { z } from "zod";
+import { deleteByKey } from "@/lib/storage";
 
 export const runtime = "nodejs";
 
@@ -70,4 +71,37 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     await db.update(schema.influencers).set(updates).where(eq(schema.influencers.id, id));
   }
   return NextResponse.json({ ok: true });
+}
+
+export async function DELETE(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  await ready();
+  const { id } = await params;
+
+  const inf = (
+    await db.select().from(schema.influencers).where(eq(schema.influencers.id, id)).limit(1)
+  )[0];
+  if (!inf) return NextResponse.json({ error: "not found" }, { status: 404 });
+
+  // 1. Delete all stored blobs (best-effort — missing keys are ignored).
+  const allAssets = await db
+    .select()
+    .from(schema.assets)
+    .where(eq(schema.assets.influencerId, id));
+  await Promise.all(
+    allAssets
+      .filter((a) => !!a.storageKey)
+      .map((a) => deleteByKey(a.storageKey as string)),
+  );
+
+  // 2. Cascade DB rows. Asset and job tables aren't FK-bound, so explicit.
+  await db.delete(schema.assets).where(eq(schema.assets.influencerId, id));
+  await db.delete(schema.jobs).where(eq(schema.jobs.influencerId, id));
+  await db.delete(schema.influencers).where(eq(schema.influencers.id, id));
+
+  return NextResponse.json({
+    ok: true,
+    deleted: {
+      assets: allAssets.length,
+    },
+  });
 }

@@ -4,6 +4,7 @@ import { db, schema, ready } from "@/lib/db";
 import { eq, desc } from "drizzle-orm";
 import { Button } from "@/components/Button";
 import { PersonaEditor } from "@/components/PersonaEditor";
+import { DeleteInfluencerButton } from "@/components/DeleteInfluencerButton";
 import { InfluencerClient } from "./InfluencerClient";
 
 export const dynamic = "force-dynamic";
@@ -41,6 +42,7 @@ export default async function InfluencerPage({ params }: { params: Promise<{ id:
           </div>
         </div>
         <div className="flex items-center gap-2 shrink-0">
+          <DeleteInfluencerButton influencerId={inf.id} influencerName={inf.name} />
           <PersonaEditor
             influencerId={inf.id}
             initialName={inf.name}
