@@ -28,6 +28,9 @@ export function InfluencerClient({
   const [canonicalId, setCanonicalId] = useState(canonicalImageId);
   const [activeJobId, setActiveJobId] = useState<string | null>(null);
   const [scenePrompt, setScenePrompt] = useState("");
+  const [outfit, setOutfit] = useState("");
+  const [pose, setPose] = useState("");
+  const [advancedOpen, setAdvancedOpen] = useState(false);
 
   // Poll until we have BOTH at least one image AND a canonical id. The
   // starter pack writes images progressively and only sets canonical at the
@@ -71,13 +74,21 @@ export function InfluencerClient({
       headers: { "content-type": "application/json" },
       body: JSON.stringify({
         influencerId,
-        scenes: [{ scene: scenePrompt }],
+        scenes: [
+          {
+            scene: scenePrompt,
+            outfit: outfit.trim() || undefined,
+            pose: pose.trim() || undefined,
+          },
+        ],
         useCanonicalAsReference: true,
       }),
     });
     const { jobId } = (await res.json()) as { jobId: string };
     setActiveJobId(jobId);
     setScenePrompt("");
+    setOutfit("");
+    setPose("");
   }
 
   return (
@@ -118,21 +129,49 @@ export function InfluencerClient({
           </div>
         )}
 
-        <div className="mt-6 space-y-2">
+        <div className="mt-6 space-y-3">
           <div className="flex gap-2">
             <input
               value={scenePrompt}
               onChange={(e) => setScenePrompt(e.target.value)}
-              placeholder="describe a new scene — e.g. 'on a Tokyo street at night, neon reflections'"
+              placeholder="describe a scene — e.g. 'on a Tokyo street at night, neon reflections, shot from low angle'"
               className="flex-1 h-11 rounded-md border border-border bg-panel px-3 text-sm focus:border-accent outline-none"
             />
             <Button onClick={generateMore} disabled={!scenePrompt.trim() || !canonicalId}>
               Generate
             </Button>
           </div>
-          {!canonicalId && (
+          <button
+            type="button"
+            onClick={() => setAdvancedOpen(!advancedOpen)}
+            className="text-xs text-muted hover:text-text"
+          >
+            {advancedOpen ? "− hide" : "+ outfit & pose"}
+          </button>
+          {advancedOpen && (
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+              <input
+                value={outfit}
+                onChange={(e) => setOutfit(e.target.value)}
+                placeholder="outfit — e.g. 'oversized cream knit sweater, vintage jeans'"
+                className="h-10 rounded-md border border-border bg-panel px-3 text-sm focus:border-accent outline-none"
+              />
+              <input
+                value={pose}
+                onChange={(e) => setPose(e.target.value)}
+                placeholder="pose / expression — e.g. 'mid-laugh, hand brushing hair'"
+                className="h-10 rounded-md border border-border bg-panel px-3 text-sm focus:border-accent outline-none"
+              />
+            </div>
+          )}
+          {!canonicalId ? (
             <div className="text-xs text-muted">
               Pick a canonical face above first — it locks the identity for new scenes.
+            </div>
+          ) : (
+            <div className="text-xs text-muted">
+              Tip: be cinematic and specific (framing, lighting, time of day, lens). Generic
+              prompts produce generic outputs.
             </div>
           )}
         </div>

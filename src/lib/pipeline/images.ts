@@ -15,15 +15,18 @@ export type SceneSpec = {
 };
 
 function buildPrompt(persona: Persona, scene: SceneSpec) {
-  return [
-    persona.visualPrompt,
-    scene.outfit ? `wearing ${scene.outfit}` : "",
-    scene.pose ?? "",
-    scene.expression ?? "",
+  // Ordering matters: image models weight the front of the prompt heavily, so
+  // we lead with the SCENE (what the user is asking for) and follow with the
+  // character traits that lock identity. Scene-last loses to character traits.
+  const sceneBits = [
     scene.scene,
+    scene.outfit ? `wearing ${scene.outfit}` : "",
+    scene.pose,
+    scene.expression,
   ]
     .filter(Boolean)
     .join(", ");
+  return [sceneBits, persona.visualPrompt].filter(Boolean).join(", ");
 }
 
 export async function generateInfluencerImages(args: {
