@@ -12,6 +12,13 @@ import { toAbsoluteUrl } from "../publicUrl";
 import { generateScript } from "../providers/anthropic";
 import { burnCaptionsAndCrop } from "./postprocess";
 
+// Step toggles: voice + lipsync are off by default because they're the most
+// expensive + slowest + most fragile parts of the chain. The minimum viable
+// output (script + keyframe + animation + caption) is enough for many TikTok
+// formats. Flip these on once you have a working baseline.
+const VOICE_ENABLED = process.env.VOICE_ENABLED === "1";
+const LIPSYNC_ENABLED = process.env.LIPSYNC_ENABLED === "1";
+
 export async function generateVideo(args: {
   influencerId: string;
   topic: string;
@@ -33,6 +40,8 @@ export async function generateVideo(args: {
   if (!canon) throw new Error("canonical image asset missing");
 
   const provider = getProvider();
+  const id = nanoid(12);
+  const skipped: string[] = [];
 
   args.onProgress?.(5, "writing script");
   const script = (await generateScript({
@@ -51,7 +60,7 @@ export async function generateVideo(args: {
     hashtags: string[];
   };
 
-  args.onProgress?.(15, "rendering keyframe");
+  args.onProgress?.(20, "rendering keyframe");
   const keyframe = await provider.generateImage({
     prompt: `${inf.persona.visualPrompt}, ${script.visualDirection}`,
     negativePrompt: inf.persona.negativePrompt,
@@ -61,27 +70,69 @@ export async function generateVideo(args: {
   });
   const keyframeUrl = keyframe.images[0].url;
 
-  args.onProgress?.(35, "voicing line");
-  const tts = await provider.tts({
-    text: script.spokenLine,
-    voiceRefUrl: inf.voiceRefUrl ?? undefined,
-    voiceDescription: inf.persona.voiceDescription,
-  });
+  // Save the keyframe as its own asset RIGHT AWAY so this success isn't lost
+  // if a later step blows up.
+  await persistFromUrl(keyframeUrl, {
+    key: `${inf.id}/keyframes/${id}.jpg`,
+    ext: "jpg",
+  })
+    .then((persisted) =>
+      db.insert(schema.assets).values({
+        id: `kf_${id}`,
+        influencerId: inf.id,
+        kind: "image",
+        url: persisted.url,
+        storageKey: persisted.key,
+        meta: { fromVideoJob: id, scene: script.visualDirection },
+      }),
+    )
+    .catch((e) => console.error("keyframe persist failed (non-fatal):", e));
 
-  args.onProgress?.(50, "animating clip");
+  // Voice: optional, swallow failures so they don't kill the whole job.
+  let audioUrl: string | undefined;
+  if (VOICE_ENABLED) {
+    try {
+      args.onProgress?.(40, "voicing line");
+      const tts = await provider.tts({
+        text: script.spokenLine,
+        voiceRefUrl: inf.voiceRefUrl ?? undefined,
+        voiceDescription: inf.persona.voiceDescription,
+      });
+      audioUrl = tts.audioUrl;
+    } catch (e) {
+      skipped.push(`voice (${asMessage(e)})`);
+    }
+  } else {
+    skipped.push("voice (VOICE_ENABLED=0)");
+  }
+
+  args.onProgress?.(55, "animating clip");
   const video = await provider.generateVideo({
     imageUrl: keyframeUrl,
     prompt: script.visualDirection,
     durationSec: dur,
   });
 
-  args.onProgress?.(75, "syncing lips");
-  const synced = await provider.lipsync({ videoUrl: video.videoUrl, audioUrl: tts.audioUrl });
+  // Lipsync: only if both voice succeeded AND lipsync is enabled. Optional.
+  let finalRemoteUrl = video.videoUrl;
+  if (LIPSYNC_ENABLED && audioUrl) {
+    try {
+      args.onProgress?.(80, "syncing lips");
+      const synced = await provider.lipsync({ videoUrl: video.videoUrl, audioUrl });
+      finalRemoteUrl = synced.videoUrl;
+    } catch (e) {
+      skipped.push(`lipsync (${asMessage(e)})`);
+    }
+  } else if (LIPSYNC_ENABLED && !audioUrl) {
+    skipped.push("lipsync (no audio)");
+  } else {
+    skipped.push("lipsync (LIPSYNC_ENABLED=0)");
+  }
 
-  args.onProgress?.(88, "post-processing");
+  args.onProgress?.(90, "post-processing");
   const tmp = await mkdtemp(join(tmpdir(), "influential-"));
   try {
-    const inputPath = await materializeToDisk(synced.videoUrl, join(tmp, "in.mp4"));
+    const inputPath = await materializeToDisk(finalRemoteUrl, join(tmp, "in.mp4"));
     const outputPath = join(tmp, "out.mp4");
     await burnCaptionsAndCrop({
       inputPath,
@@ -89,14 +140,10 @@ export async function generateVideo(args: {
       captionText: script.captionText,
     });
 
-    const id = nanoid(12);
     const persisted = await persistFromFile(outputPath, {
       key: `${inf.id}/videos/${id}.mp4`,
       ext: "mp4",
     });
-
-    // Also persist the raw keyframe alongside (useful for debugging / re-runs).
-    void persistFromUrl(keyframeUrl, { key: `${inf.id}/keyframes/${id}.jpg`, ext: "jpg" }).catch(() => {});
 
     await db.insert(schema.assets).values({
       id,
@@ -109,17 +156,23 @@ export async function generateVideo(args: {
         script,
         durationSec: dur,
         keyframeUrl,
+        skipped,
+        hadAudio: !!audioUrl,
+        hadLipsync: finalRemoteUrl !== video.videoUrl,
       },
     });
 
     args.onProgress?.(100, "done");
-    return { assetId: id, url: persisted.url, script };
+    return { assetId: id, url: persisted.url, script, skipped };
   } finally {
     await rm(tmp, { recursive: true, force: true });
   }
 }
 
-// Bring a remote/data:/file: URL into a local temp path so ffmpeg can read it.
+function asMessage(e: unknown) {
+  return e instanceof Error ? e.message.slice(0, 100) : String(e).slice(0, 100);
+}
+
 async function materializeToDisk(url: string, destPath: string): Promise<string> {
   if (url.startsWith("file://")) return fileURLToPath(url);
   let buf: Buffer;

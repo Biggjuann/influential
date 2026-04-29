@@ -8,6 +8,7 @@ type VideoOutput = {
   assetId: string;
   url: string;
   script: { hook: string; spokenLine: string; captionText: string; hashtags: string[] };
+  skipped?: string[];
 };
 
 export function StudioClient({
@@ -105,6 +106,11 @@ export function StudioClient({
                 </span>
               ))}
             </div>
+            {output.skipped && output.skipped.length > 0 && (
+              <div className="text-xs text-muted">
+                Skipped: {output.skipped.join(", ")}
+              </div>
+            )}
             <a href={output.url} download className="inline-block">
               <Button variant="secondary" size="sm">⬇ Download MP4</Button>
             </a>
