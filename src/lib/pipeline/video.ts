@@ -8,6 +8,7 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { getProvider } from "../providers";
 import { persistFromFile, persistFromUrl } from "../storage";
+import { toAbsoluteUrl } from "../publicUrl";
 import { generateScript } from "../providers/anthropic";
 import { burnCaptionsAndCrop } from "./postprocess";
 
@@ -55,7 +56,7 @@ export async function generateVideo(args: {
     prompt: `${inf.persona.visualPrompt}, ${script.visualDirection}`,
     negativePrompt: inf.persona.negativePrompt,
     aspectRatio: "9:16",
-    faceReferenceUrl: canon.url,
+    faceReferenceUrl: toAbsoluteUrl(canon.url),
     count: 1,
   });
   const keyframeUrl = keyframe.images[0].url;
