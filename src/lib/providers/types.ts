@@ -1,4 +1,5 @@
 export type QualityMode = "draft" | "standard" | "premium";
+export type ImageEngine = "face-lock" | "seedream" | "flux-pro" | "recraft";
 
 export type ImageGenInput = {
   prompt: string;
@@ -8,6 +9,7 @@ export type ImageGenInput = {
   seed?: number;
   count?: number;
   mode?: QualityMode;
+  engine?: ImageEngine;
 };
 
 export type ImageGenOutput = {

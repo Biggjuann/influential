@@ -31,6 +31,9 @@ export function InfluencerClient({
   const [outfit, setOutfit] = useState("");
   const [pose, setPose] = useState("");
   const [advancedOpen, setAdvancedOpen] = useState(false);
+  const [engine, setEngine] = useState<"face-lock" | "seedream" | "flux-pro" | "recraft">(
+    "face-lock",
+  );
 
   // Poll until we have BOTH at least one image AND a canonical id. The
   // starter pack writes images progressively and only sets canonical at the
@@ -81,7 +84,10 @@ export function InfluencerClient({
             pose: pose.trim() || undefined,
           },
         ],
-        useCanonicalAsReference: true,
+        // Face-lock requires the canonical reference; the other engines
+        // generate from the visualPrompt only and can't accept references.
+        useCanonicalAsReference: engine === "face-lock",
+        engine,
       }),
     });
     const { jobId } = (await res.json()) as { jobId: string };
@@ -90,6 +96,25 @@ export function InfluencerClient({
     setOutfit("");
     setPose("");
   }
+
+  const ENGINE_INFO = {
+    "face-lock": {
+      label: "Face lock",
+      desc: "Flux + PuLID. Pixel-locks the canonical face. Best for character consistency, weakest at clothing graphics.",
+    },
+    seedream: {
+      label: "Seedream",
+      desc: "ByteDance Seedream 4. Strongest for text/logos on clothing. Face only resembles canonical via prompt.",
+    },
+    "flux-pro": {
+      label: "Flux Pro",
+      desc: "Flux 1.1 Pro Ultra. Highest realism, best lighting/composition. No face lock.",
+    },
+    recraft: {
+      label: "Recraft",
+      desc: "Recraft V3. Specifically tuned for accurate text rendering. No face lock.",
+    },
+  } as const;
 
   return (
     <div className="space-y-10">
@@ -137,9 +162,29 @@ export function InfluencerClient({
               placeholder="describe a scene — e.g. 'on a Tokyo street at night, neon reflections, shot from low angle'"
               className="flex-1 h-11 rounded-md border border-border bg-panel px-3 text-sm focus:border-accent outline-none"
             />
-            <Button onClick={generateMore} disabled={!scenePrompt.trim() || !canonicalId}>
+            <Button
+              onClick={generateMore}
+              disabled={!scenePrompt.trim() || (engine === "face-lock" && !canonicalId)}
+            >
               Generate
             </Button>
+          </div>
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+            {(Object.keys(ENGINE_INFO) as Array<keyof typeof ENGINE_INFO>).map((e) => (
+              <button
+                key={e}
+                onClick={() => setEngine(e)}
+                title={ENGINE_INFO[e].desc}
+                className={`text-left rounded-md border px-3 py-2 text-xs transition-colors ${
+                  engine === e ? "border-accent bg-accent/10" : "border-border hover:bg-border/40"
+                }`}
+              >
+                <div className="font-medium">{ENGINE_INFO[e].label}</div>
+                <div className="text-muted leading-snug mt-0.5 line-clamp-2">
+                  {ENGINE_INFO[e].desc}
+                </div>
+              </button>
+            ))}
           </div>
           <button
             type="button"
@@ -164,9 +209,15 @@ export function InfluencerClient({
               />
             </div>
           )}
-          {!canonicalId ? (
+          {engine === "face-lock" && !canonicalId ? (
             <div className="text-xs text-muted">
-              Pick a canonical face above first — it locks the identity for new scenes.
+              Pick a canonical face above first — Face-lock needs it.
+            </div>
+          ) : engine !== "face-lock" ? (
+            <div className="text-xs text-muted">
+              {ENGINE_INFO[engine].label}: face won&apos;t be pixel-locked, but the visual prompt
+              keeps it &ldquo;in the family.&rdquo; Best for shots with text/graphics on clothing
+              or specific photographic looks.
             </div>
           ) : (
             <div className="text-xs text-muted">

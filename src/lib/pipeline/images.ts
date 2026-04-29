@@ -3,6 +3,7 @@ import { db, schema, ready } from "../db";
 import { eq } from "drizzle-orm";
 import { nanoid } from "nanoid";
 import { getProvider } from "../providers";
+import type { ImageEngine } from "../providers/types";
 import { persistFromUrl } from "../storage";
 import { toAbsoluteUrl } from "../publicUrl";
 import type { Persona } from "../db/schema";
@@ -49,6 +50,7 @@ export async function generateInfluencerImages(args: {
   influencerId: string;
   scenes: SceneSpec[];
   useCanonicalAsReference?: boolean;
+  engine?: ImageEngine;
   onProgress?: (p: number, step: string) => void;
 }) {
   await ready();
@@ -78,6 +80,7 @@ export async function generateInfluencerImages(args: {
       aspectRatio: "9:16",
       faceReferenceUrl: referenceUrl,
       count: 1,
+      engine: args.engine,
     });
 
     for (const img of out.images) {

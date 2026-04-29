@@ -27,6 +27,12 @@ const ENDPOINTS = {
     premium: process.env.FAL_ENDPOINT_FLUX_PREMIUM ?? "fal-ai/flux/dev",
   },
   fluxId: process.env.FAL_ENDPOINT_FLUX_ID ?? "fal-ai/flux-pulid",
+  // Alternative engines without face-locking — much better at clothing
+  // graphics, text on objects, and overall photorealism. Tradeoff: face will
+  // resemble the visualPrompt but not be pixel-locked to canonical.
+  seedream: process.env.FAL_ENDPOINT_SEEDREAM ?? "fal-ai/bytedance/seedream/v4/text-to-image",
+  fluxPro: process.env.FAL_ENDPOINT_FLUX_PRO ?? "fal-ai/flux-pro/v1.1-ultra",
+  recraft: process.env.FAL_ENDPOINT_RECRAFT ?? "fal-ai/recraft-v3",
   videoI2V: {
     draft: process.env.FAL_ENDPOINT_VIDEO_I2V_DRAFT ?? "fal-ai/ltx-video-v095/image-to-video",
     standard:
@@ -110,17 +116,73 @@ async function falImage(input: ImageGenInput): Promise<ImageGenOutput> {
   const size = SIZES[input.aspectRatio ?? "9:16"];
   const count = input.count ?? 1;
   const mode = input.mode ?? "standard";
+  const engine = input.engine ?? "face-lock";
 
-  // PuLID is the most expensive image step. Skip it in draft mode — face will
-  // be "in the right family" via the visualPrompt without being pixel-locked
-  // to canonical, which is the right tradeoff while iterating on script/scene.
+  // Engine selection. "face-lock" is the default Flux+PuLID identity lock;
+  // the others are higher-fidelity general-purpose models that don't preserve
+  // identity pixel-perfectly but render clothing graphics + photorealism much
+  // better than Flux. We skip PuLID for those.
+  if (engine === "seedream") {
+    const data = await call<{ images: { url: string; width?: number; height?: number }[]; seed?: number }>(
+      ENDPOINTS.seedream,
+      {
+        prompt: input.prompt,
+        image_size: { width: size.width, height: size.height },
+        num_images: count,
+        seed: input.seed,
+      },
+    );
+    return {
+      images: data.images.map((img) => ({
+        url: img.url,
+        width: img.width ?? size.width,
+        height: img.height ?? size.height,
+        seed: data.seed ?? 0,
+      })),
+    };
+  }
+
+  if (engine === "flux-pro") {
+    const data = await call<{ images: { url: string; width?: number; height?: number }[]; seed?: number }>(
+      ENDPOINTS.fluxPro,
+      {
+        prompt: input.prompt,
+        aspect_ratio: input.aspectRatio === "9:16" ? "9:16" : input.aspectRatio === "16:9" ? "16:9" : "1:1",
+        num_images: count,
+        seed: input.seed,
+      },
+    );
+    return {
+      images: data.images.map((img) => ({
+        url: img.url,
+        width: img.width ?? size.width,
+        height: img.height ?? size.height,
+        seed: data.seed ?? 0,
+      })),
+    };
+  }
+
+  if (engine === "recraft") {
+    const data = await call<{ images: { url: string }[] }>(ENDPOINTS.recraft, {
+      prompt: input.prompt,
+      image_size: { width: size.width, height: size.height },
+      style: "realistic_image",
+    });
+    return {
+      images: data.images.map((img) => ({
+        url: img.url,
+        width: size.width,
+        height: size.height,
+        seed: input.seed ?? 0,
+      })),
+    };
+  }
+
+  // Default: face-lock via Flux + PuLID (only when we have a reference).
+  // PuLID is the most expensive image step, so draft mode falls through to
+  // plain Flux schnell when no reference is provided OR draft is selected.
   const useFaceLock = mode !== "draft" && !!input.faceReferenceUrl;
-
   if (useFaceLock) {
-    // id_weight defaults to 1.0 in PuLID which forces the new image to
-    // resemble the reference's face AND lighting/composition — bad when the
-    // user wants a different scene. ~0.85 keeps the identity recognizable
-    // while letting the prompt actually drive the look.
     const idWeight = Number(process.env.FAL_PULID_ID_WEIGHT ?? 0.9);
     const data = await call<FluxResult>(ENDPOINTS.fluxId, {
       prompt: input.prompt,

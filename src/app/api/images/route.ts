@@ -16,6 +16,7 @@ const Body = z.object({
     )
     .min(1),
   useCanonicalAsReference: z.boolean().default(true),
+  engine: z.enum(["face-lock", "seedream", "flux-pro", "recraft"]).default("face-lock"),
 });
 
 export const runtime = "nodejs";
@@ -31,6 +32,7 @@ export async function POST(req: NextRequest) {
           influencerId: body.influencerId,
           scenes: body.scenes,
           useCanonicalAsReference: body.useCanonicalAsReference,
+          engine: body.engine,
           onProgress: update,
         }),
       );
