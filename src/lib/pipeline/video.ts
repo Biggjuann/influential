@@ -4,6 +4,7 @@ import { eq } from "drizzle-orm";
 import { nanoid } from "nanoid";
 import { getProvider } from "../providers";
 import { downloadToDisk } from "../storage";
+import { toAbsoluteUrl } from "../publicUrl";
 import { generateScript } from "../providers/anthropic";
 import { burnCaptionsAndCrop } from "./postprocess";
 
@@ -45,7 +46,7 @@ export async function generateVideo(args: {
     prompt: `${inf.persona.visualPrompt}, ${script.visualDirection}`,
     negativePrompt: inf.persona.negativePrompt,
     aspectRatio: "9:16",
-    faceReferenceUrl: canon.url.startsWith("http") ? canon.url : await toAbsolute(canon.url),
+    faceReferenceUrl: toAbsoluteUrl(canon.url),
     count: 1,
   });
   const keyframeUrl = keyframe.images[0].url;
@@ -95,12 +96,4 @@ export async function generateVideo(args: {
 
   args.onProgress?.(100, "done");
   return { assetId: id, url: publicUrl, script };
-}
-
-async function toAbsolute(relativeUrl: string) {
-  // Local public URL like /api/assets/... — fal needs an absolute URL.
-  // We resolve it from PUBLIC_BASE_URL or fall back to the original relative path
-  // (mock provider tolerates both).
-  const base = process.env.PUBLIC_BASE_URL ?? "";
-  return base ? new URL(relativeUrl, base).toString() : relativeUrl;
 }

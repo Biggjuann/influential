@@ -4,6 +4,7 @@ import { eq } from "drizzle-orm";
 import { nanoid } from "nanoid";
 import { getProvider } from "../providers";
 import { downloadToDisk } from "../storage";
+import { toAbsoluteUrl } from "../publicUrl";
 import type { Persona } from "../db/schema";
 
 export type SceneSpec = {
@@ -36,7 +37,7 @@ export async function generateInfluencerImages(args: {
   let referenceUrl: string | undefined;
   if (args.useCanonicalAsReference && inf.canonicalImageId) {
     const ref = db.select().from(schema.assets).where(eq(schema.assets.id, inf.canonicalImageId)).get();
-    referenceUrl = ref?.url;
+    if (ref?.url) referenceUrl = toAbsoluteUrl(ref.url);
   }
 
   const provider = getProvider();

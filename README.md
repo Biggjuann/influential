@@ -32,6 +32,23 @@ Open http://localhost:3000.
 
 Set `USE_MOCK_PROVIDERS=1` in `.env` to use placeholder images/videos and skip API costs. Useful for UI work.
 
+## Deploy on Railway
+
+The repo ships with a `Dockerfile` and `railway.json` ready to go.
+
+1. **Create a service** from this GitHub repo on [railway.app](https://railway.app/new). Railway auto-detects the Dockerfile.
+2. **Add a volume** (Service → Settings → Volumes) mounted at `/data`. SQLite and generated assets live there — without it your data resets every deploy.
+3. **Set environment variables**:
+   - `ANTHROPIC_API_KEY` — your Claude key
+   - `FAL_KEY` — your fal.ai key
+   - (optional) `USE_MOCK_PROVIDERS=1` for a free demo deploy
+4. **Generate a public domain** (Settings → Networking → Generate Domain). The app reads `RAILWAY_PUBLIC_DOMAIN` automatically and uses it as the public base URL so fal.ai can fetch reference assets back from your deployment. If you set a custom domain, also set `PUBLIC_BASE_URL=https://your.domain` to override.
+5. **Deploy.** Health check is `/api/health`.
+
+**Why the volume matters** — the pipeline downloads each generated image/video to local disk and serves them at `/api/assets/...`. fal needs to fetch the canonical face image back from your deployment, so the URL must persist between requests and across restarts.
+
+**Cold-start budget** — first request after a deploy compiles native modules from the cached image; warm requests are instant. Image gen is ~6-10s, video gen is ~60-120s on fal.
+
 ## Project layout
 
 ```
