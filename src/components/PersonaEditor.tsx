@@ -31,15 +31,27 @@ export function PersonaEditor({
   initialNiche,
   initialPersona,
   initialVoiceRefUrl,
+  open: controlledOpen,
+  onOpenChange,
 }: {
   influencerId: string;
   initialName: string;
   initialNiche: string;
   initialPersona: Persona;
   initialVoiceRefUrl: string | null;
+  /** When provided, parent controls visibility; PersonaEditor renders the
+   * form-only (no toggle button) and calls onOpenChange for cancel/save. */
+  open?: boolean;
+  onOpenChange?: (open: boolean) => void;
 }) {
   const router = useRouter();
-  const [open, setOpen] = useState(false);
+  const isControlled = controlledOpen !== undefined;
+  const [internalOpen, setInternalOpen] = useState(false);
+  const open = isControlled ? !!controlledOpen : internalOpen;
+  const setOpen = (v: boolean) => {
+    if (isControlled) onOpenChange?.(v);
+    else setInternalOpen(v);
+  };
   const [saving, setSaving] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [name, setName] = useState(initialName);
@@ -110,7 +122,10 @@ export function PersonaEditor({
     }
   }
 
+  // Controlled mode: parent renders its own button. We just don't render the
+  // form when it's closed.
   if (!open) {
+    if (isControlled) return null;
     return (
       <Button variant="secondary" size="sm" onClick={() => setOpen(true)}>
         Edit persona

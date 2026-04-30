@@ -2,9 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { db, schema, ready } from "@/lib/db";
 import { eq, desc } from "drizzle-orm";
-import { Button } from "@/components/Button";
-import { PersonaEditor } from "@/components/PersonaEditor";
-import { DeleteInfluencerButton } from "@/components/DeleteInfluencerButton";
+import { InfluencerHeaderCard } from "@/components/InfluencerHeaderCard";
 import { InfluencerClient } from "./InfluencerClient";
 
 export const dynamic = "force-dynamic";
@@ -33,36 +31,13 @@ export default async function InfluencerPage({ params }: { params: Promise<{ id:
 
   return (
     <div className="space-y-10">
-      <header className="flex items-start justify-between gap-6">
-        <div>
-          <div className="text-sm text-muted">{inf.niche}</div>
-          <h1 className="text-3xl font-semibold tracking-tight">{inf.name}</h1>
-          <p className="text-muted mt-2 max-w-2xl">{inf.persona.backstory}</p>
-          <div className="mt-3 flex flex-wrap gap-2">
-            {inf.persona.contentPillars.map((p) => (
-              <span key={p} className="text-xs rounded-full border border-border bg-panel px-2.5 py-1">
-                {p}
-              </span>
-            ))}
-          </div>
-        </div>
-        <div className="flex items-center gap-2 shrink-0">
-          <DeleteInfluencerButton influencerId={inf.id} influencerName={inf.name} />
-          <PersonaEditor
-            influencerId={inf.id}
-            initialName={inf.name}
-            initialNiche={inf.niche}
-            initialPersona={inf.persona}
-            initialVoiceRefUrl={inf.voiceRefUrl}
-          />
-          <Link href={`/influencers/${inf.id}/reels/new`}>
-            <Button variant="secondary">🎞 New reel</Button>
-          </Link>
-          <Link href={`/influencers/${inf.id}/studio`}>
-            <Button>🎬 New video</Button>
-          </Link>
-        </div>
-      </header>
+      <InfluencerHeaderCard
+        influencerId={inf.id}
+        name={inf.name}
+        niche={inf.niche}
+        persona={inf.persona}
+        voiceRefUrl={inf.voiceRefUrl}
+      />
 
       <InfluencerClient
         influencerId={inf.id}
