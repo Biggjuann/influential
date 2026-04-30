@@ -23,12 +23,14 @@ export function InfluencerHeaderCard({
 
   return (
     <div className="space-y-4">
-      <div className="rounded-xl border border-border bg-panel p-6">
-        <div className="flex items-start justify-between gap-6 flex-wrap">
+      <div className="rounded-xl border border-border bg-panel p-4 sm:p-6">
+        <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between sm:gap-6">
           <div className="min-w-0 flex-1">
             <div className="text-sm text-muted">{niche}</div>
-            <h1 className="text-3xl font-semibold tracking-tight">{name}</h1>
-            <p className="text-muted mt-2 max-w-2xl">{persona.backstory}</p>
+            <h1 className="text-2xl sm:text-3xl font-semibold tracking-tight break-words">
+              {name}
+            </h1>
+            <p className="text-muted mt-2 max-w-2xl text-sm sm:text-base">{persona.backstory}</p>
             <div className="mt-3 flex flex-wrap gap-2">
               {persona.contentPillars.map((p) => (
                 <span
@@ -50,10 +52,10 @@ export function InfluencerHeaderCard({
               {editing ? "Close editor" : "Edit persona"}
             </Button>
             <Link href={`/influencers/${influencerId}/reels/new`}>
-              <Button variant="secondary">🎞 New reel</Button>
+              <Button variant="secondary" size="sm">🎞 New reel</Button>
             </Link>
             <Link href={`/influencers/${influencerId}/studio`}>
-              <Button>🎬 New video</Button>
+              <Button size="sm">🎬 New video</Button>
             </Link>
           </div>
         </div>

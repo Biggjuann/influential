@@ -55,7 +55,7 @@ export default async function InfluencerPage({ params }: { params: Promise<{ id:
       />
 
       <section>
-        <div className="flex items-center justify-between mb-4">
+        <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between mb-4">
           <h2 className="text-xl font-semibold">Reels</h2>
           <Link href={`/influencers/${inf.id}/reels/new`} className="text-sm text-accent hover:opacity-80">
             + new reel

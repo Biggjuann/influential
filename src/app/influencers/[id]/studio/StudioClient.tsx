@@ -124,7 +124,7 @@ export function StudioClient({
 
   return (
     <div className="space-y-6">
-      <div className="rounded-xl border border-border bg-panel p-5 space-y-5">
+      <div className="rounded-xl border border-border bg-panel p-4 sm:p-5 space-y-5">
         {/* Script mode tabs */}
         <div className="flex gap-1 p-1 rounded-lg bg-bg/60 border border-border w-fit">
           {(["auto", "custom"] as ScriptMode[]).map((m) => (
@@ -351,7 +351,7 @@ export function StudioClient({
               <div className="text-xs text-muted mt-1.5">{SHOT_MIX_INFO[shotMix].desc}</div>
             </div>
           )}
-          <div className="ml-auto text-right">
+          <div className="sm:ml-auto sm:text-right">
             <div className="text-xs text-muted">Estimated cost</div>
             <div className="text-lg font-medium tabular-nums">~${estCost.toFixed(2)}</div>
           </div>

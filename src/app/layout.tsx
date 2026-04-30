@@ -23,18 +23,18 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       </head>
       <body className="min-h-screen antialiased scrollbar">
         <div className="border-b border-border bg-panel/60 backdrop-blur sticky top-0 z-40">
-          <div className="mx-auto max-w-6xl px-6 py-4 flex items-center justify-between">
+          <div className="mx-auto max-w-6xl px-4 sm:px-6 py-3 sm:py-4 flex items-center justify-between">
             <a href="/" className="flex items-center gap-2 group">
               <span className="h-7 w-7 rounded-md bg-gradient-to-br from-accent to-accent2" />
               <span className="font-semibold tracking-tight">Influential</span>
             </a>
-            <nav className="flex items-center gap-6 text-sm text-muted">
+            <nav className="flex items-center gap-4 sm:gap-6 text-sm text-muted">
               <a href="/" className="hover:text-text">Roster</a>
-              <a href="/influencers/new" className="hover:text-text">New influencer</a>
+              <a href="/influencers/new" className="hover:text-text whitespace-nowrap">New influencer</a>
             </nav>
           </div>
         </div>
-        <main className="mx-auto max-w-6xl px-6 py-10">{children}</main>
+        <main className="mx-auto max-w-6xl px-4 sm:px-6 py-6 sm:py-10">{children}</main>
       </body>
     </html>
   );

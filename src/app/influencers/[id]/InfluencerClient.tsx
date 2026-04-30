@@ -119,7 +119,7 @@ export function InfluencerClient({
   return (
     <div className="space-y-10">
       <section>
-        <div className="flex items-center justify-between mb-4">
+        <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between mb-4">
           <h2 className="text-xl font-semibold">Identity</h2>
           {canonicalId && (
             <span className="text-xs text-muted">

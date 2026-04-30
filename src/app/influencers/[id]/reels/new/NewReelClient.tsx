@@ -140,7 +140,7 @@ export function NewReelClient({
 
   return (
     <form onSubmit={go} className="space-y-6">
-      <div className="rounded-xl border border-border bg-panel p-5 space-y-4">
+      <div className="rounded-xl border border-border bg-panel p-4 sm:p-5 space-y-4">
         <Field label="Title" hint="Just for your own organization.">
           <input
             value={title}
@@ -377,7 +377,7 @@ export function NewReelClient({
           <div className="text-xs text-muted">Total length</div>
           <div className="text-lg font-medium tabular-nums">{totalSeconds}s</div>
         </div>
-        <div className="ml-auto text-right">
+        <div className="sm:ml-auto sm:text-right">
           <div className="text-xs text-muted">Estimated cost</div>
           <div className="text-lg font-medium tabular-nums">~${estCost.toFixed(2)}</div>
         </div>

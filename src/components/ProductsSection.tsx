@@ -33,15 +33,15 @@ export function ProductsSection({
 
   return (
     <section>
-      <div className="flex items-center justify-between mb-4">
-        <div>
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between mb-4">
+        <div className="min-w-0">
           <h2 className="text-xl font-semibold">Products</h2>
-          <div className="text-xs text-muted mt-0.5">
+          <div className="text-xs text-muted mt-0.5 max-w-prose">
             Used by Tutorial / Unboxing / Product Review / Try-On formats — pipeline injects the
             product name and uses your uploaded images for detail / cutaway shots.
           </div>
         </div>
-        <Button variant="secondary" size="sm" onClick={() => setAdding(true)}>
+        <Button variant="secondary" size="sm" onClick={() => setAdding(true)} className="self-start sm:self-auto whitespace-nowrap">
           + Add product
         </Button>
       </div>
