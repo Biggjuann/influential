@@ -2,8 +2,9 @@
 import { useState, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/Button";
-import type { Persona, CaptionStyleConfig } from "@/lib/db/schema";
+import type { Persona, CaptionStyleConfig, Format } from "@/lib/db/schema";
 import { AVAILABLE_FONTS } from "@/lib/captionFonts";
+import { FormatPicker } from "@/components/FormatPicker";
 
 const POSITIONS: { id: "top" | "center" | "bottom"; label: string }[] = [
   { id: "top", label: "Top" },
@@ -219,6 +220,18 @@ export function PersonaEditor({
             rows={2}
           />
         </Field>
+      </Section>
+
+      {/* Default format */}
+      <Section
+        title="Default format"
+        subtitle="Picks the visual / motion / scene-pattern style applied to every video and reel for this influencer. You can override per render."
+      >
+        <FormatPicker
+          value={(p.defaultFormat ?? "cinematic") as Format}
+          onChange={(v) => setP({ ...p, defaultFormat: v })}
+          label=""
+        />
       </Section>
 
       {/* Voice cloning */}

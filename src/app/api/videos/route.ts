@@ -7,6 +7,7 @@ import { generateVideo } from "@/lib/pipeline/video";
 import { generateStory } from "@/lib/pipeline/story";
 import { generateSequentialBeats } from "@/lib/providers/anthropic";
 import { createJob, runJob, updateJob } from "@/lib/jobs";
+import { getFormat, type Format } from "@/lib/formatPresets";
 
 const Body = z.object({
   influencerId: z.string(),
@@ -15,6 +16,9 @@ const Body = z.object({
   mode: z.enum(["draft", "standard", "premium"]).default("standard"),
   variantCount: z.number().int().min(1).max(5).default(1),
   shotMix: z.enum(["talking", "mixed", "travel"]).default("mixed"),
+  format: z
+    .enum(["ugc", "tutorial", "unboxing", "product_review", "try_on", "travel", "cinematic"])
+    .optional(),
   sourceImageId: z.string().optional(),
   customScript: z
     .object({
@@ -48,6 +52,10 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "influencer not found" }, { status: 404 });
     }
 
+    const format: Format =
+      body.format ?? (inf.persona.defaultFormat as Format | undefined) ?? "cinematic";
+    const fmt = getFormat(format);
+    const shotMix = body.shotMix ?? fmt.defaultShotMix;
     const planned = await generateSequentialBeats({
       persona: {
         name: inf.persona.name,
@@ -57,7 +65,9 @@ export async function POST(req: NextRequest) {
       topic: body.topic,
       beatCount: body.variantCount,
       durationSecPerBeat: body.durationSec,
-      shotMix: body.shotMix,
+      shotMix,
+      format,
+      formatBeatPattern: fmt.beatPattern,
     });
 
     const storyId = nanoid(12);
@@ -73,6 +83,7 @@ export async function POST(req: NextRequest) {
         shotType: (b as { shotType?: "subject" | "scenery" | "detail" }).shotType ?? "subject",
       })),
       mode: body.mode,
+      format,
       status: "rendering",
     });
 
@@ -104,6 +115,7 @@ export async function POST(req: NextRequest) {
           durationSec: body.durationSec,
           mode: body.mode,
           variantCount: body.variantCount,
+          format: body.format,
           sourceImageId: body.sourceImageId,
           customScript: body.customScript,
           onProgress: update,

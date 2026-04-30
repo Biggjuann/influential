@@ -23,6 +23,9 @@ const Body = z.object({
     .min(1)
     .max(10),
   mode: z.enum(["draft", "standard", "premium"]).default("standard"),
+  format: z
+    .enum(["ugc", "tutorial", "unboxing", "product_review", "try_on", "travel", "cinematic"])
+    .default("cinematic"),
 });
 
 export const runtime = "nodejs";
@@ -54,6 +57,7 @@ export async function POST(req: NextRequest) {
     fullScript: body.fullScript,
     scenes: body.scenes,
     mode: body.mode,
+    format: body.format,
     status: "queued",
   });
 

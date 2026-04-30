@@ -34,6 +34,7 @@ export default async function NewReelPage({ params }: { params: Promise<{ id: st
       <NewReelClient
         influencerId={inf.id}
         gallery={images.map((i) => ({ id: i.id, url: i.url }))}
+        defaultFormat={inf.persona.defaultFormat ?? "cinematic"}
       />
     </div>
   );

@@ -2,6 +2,8 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/Button";
+import { FormatPicker } from "@/components/FormatPicker";
+import type { Format } from "@/lib/formatPresets";
 
 type Mode = "draft" | "standard" | "premium";
 
@@ -29,15 +31,18 @@ const MODE_INFO: Record<Mode, { label: string; perScene: number }> = {
 export function NewReelClient({
   influencerId,
   gallery,
+  defaultFormat,
 }: {
   influencerId: string;
   gallery: { id: string; url: string }[];
+  defaultFormat: Format;
 }) {
   const router = useRouter();
   const [title, setTitle] = useState("");
   const [globalCaption, setGlobalCaption] = useState("");
   const [fullScript, setFullScript] = useState("");
   const [mode, setMode] = useState<Mode>("standard");
+  const [format, setFormat] = useState<Format>(defaultFormat);
   const [scenes, setScenes] = useState<Scene[]>([
     { visualDirection: "", durationSec: 5, shotType: "subject" },
     { visualDirection: "", durationSec: 5, shotType: "subject" },
@@ -104,6 +109,7 @@ export function NewReelClient({
           fullScript: fullScript.trim(),
           scenes,
           mode,
+          format,
         }),
       });
       if (!res.ok) throw new Error(await res.text());
@@ -126,6 +132,12 @@ export function NewReelClient({
             className="w-full h-10 rounded-md border border-border bg-bg px-3 text-sm focus:border-accent outline-none"
           />
         </Field>
+        <FormatPicker
+          value={format}
+          onChange={setFormat}
+          label="Format"
+          hint="Picks the visual + motion + scene-pattern style for this reel."
+        />
         <Field
           label="Persistent caption"
           hint="Burned into every scene. Leave blank for no caption."

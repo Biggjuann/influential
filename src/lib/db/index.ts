@@ -76,11 +76,14 @@ async function ensureSchema() {
       full_script TEXT NOT NULL,
       scenes JSONB NOT NULL,
       mode TEXT NOT NULL DEFAULT 'standard',
+      format TEXT NOT NULL DEFAULT 'cinematic',
       status TEXT NOT NULL DEFAULT 'queued',
       output_asset_id TEXT,
       error TEXT,
       created_at BIGINT NOT NULL DEFAULT extract(epoch from now())::bigint
     );
+    -- backfill for existing deployments that pre-date the column
+    ALTER TABLE stories ADD COLUMN IF NOT EXISTS format TEXT NOT NULL DEFAULT 'cinematic';
     CREATE INDEX IF NOT EXISTS idx_assets_influencer ON assets(influencer_id);
     CREATE INDEX IF NOT EXISTS idx_jobs_influencer ON jobs(influencer_id);
     CREATE INDEX IF NOT EXISTS idx_stories_influencer ON stories(influencer_id);

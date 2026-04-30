@@ -14,6 +14,8 @@ import type { QualityMode } from "../providers/types";
 import { persistFromFile } from "../storage";
 import { toAbsoluteUrl } from "../publicUrl";
 import { buildAss } from "../captionAss";
+import { buildKeyframePrompt, buildKeyframeNegative, buildMotionPrompt } from "../promptStyle";
+import type { Format } from "../formatPresets";
 import type { StoryScene } from "../db/schema";
 
 // Prefer system ffmpeg (libass + libfreetype + a real font library) over the
@@ -28,17 +30,7 @@ const ffmpegBin = existsSync(SYSTEM_FFMPEG)
 const HAS_LIBASS = ffmpegBin === SYSTEM_FFMPEG;
 const HAS_FFPROBE = existsSync(SYSTEM_FFPROBE);
 
-// Same anchors as the gallery generator — keep behaviour consistent so a
-// scene rendered via the studio looks like one rendered via a story beat.
-const PHOTOREAL_PREFIX =
-  "cinematic photograph, photorealistic, 35mm film, professional editorial photography, sharp focus, natural skin texture, detailed";
-const HARD_NEGATIVE =
-  "cartoon, anime, illustration, 3d render, cgi, plastic skin, deformed face, extra fingers, lowres, watermark, text, stock photo, oversaturated, bad anatomy";
-// Pushes the model away from rendering people in scenery / detail shots.
-// Travel content is mostly B-roll, so most scenes shouldn't have the
-// influencer (or any human) in frame.
-const NO_PEOPLE_NEGATIVE =
-  "people, person, human, model, portrait, face, character, crowd";
+// (prompt anchors / motion now come from formatPresets.ts via promptStyle.ts)
 
 export async function generateStory(args: {
   storyId: string;
@@ -72,6 +64,7 @@ export async function generateStory(args: {
 
   const provider = getProvider();
   const mode: QualityMode = (story.mode as QualityMode) ?? "standard";
+  const format: Format = ((story as { format?: string }).format as Format) ?? "cinematic";
   const totalSteps =
     story.scenes.length /* keyframes */ + story.scenes.length /* animations */ + 4;
   let step = 0;
@@ -103,34 +96,27 @@ export async function generateStory(args: {
         keyframeUrl = toAbsoluteUrl(src.url);
         tick(`scene ${i + 1} (${shotType}): using picked image`);
       } else {
-        tick(`scene ${i + 1} (${shotType}): keyframe`);
-        // Subject shots include character traits + face reference. Scenery
-        // and detail shots SKIP the character entirely so the model can
-        // actually render landscapes / cutaways without dragging a face into
-        // the frame — that's the cornerstone of travel-creator B-roll.
+        tick(`scene ${i + 1} (${shotType}/${format}): keyframe`);
         const isSubject = shotType === "subject";
         if (isSubject && !canon) {
           throw new Error("subject scene needs influencer canonical face — pick one first");
         }
-
-        const promptParts = [PHOTOREAL_PREFIX, scene.visualDirection];
-        if (isSubject) promptParts.push(inf.persona.visualPrompt);
-
-        const negativeParts = [HARD_NEGATIVE];
-        if (isSubject && inf.persona.negativePrompt) {
-          negativeParts.unshift(inf.persona.negativePrompt);
-        }
-        if (!isSubject) negativeParts.push(NO_PEOPLE_NEGATIVE);
-
         const kf = await provider.generateImage({
-          prompt: promptParts.filter(Boolean).join(", "),
-          negativePrompt: negativeParts.join(", "),
+          prompt: buildKeyframePrompt({
+            visualDirection: scene.visualDirection,
+            format,
+            shotType,
+            characterPrompt: isSubject ? inf.persona.visualPrompt : undefined,
+          }),
+          negativePrompt: buildKeyframeNegative({
+            format,
+            shotType,
+            personaNegative: isSubject ? inf.persona.negativePrompt : undefined,
+          }),
           aspectRatio: "9:16",
           faceReferenceUrl: isSubject && canon ? toAbsoluteUrl(canon.url) : undefined,
           count: 1,
           mode,
-          // Subject shots: scene-fidelity-leaning identity weight (0.7).
-          // Scenery/detail: no PuLID at all — engine is plain Flux.
           idWeightOverride: isSubject ? 0.7 : undefined,
         });
         keyframeUrl = kf.images[0].url;
@@ -139,7 +125,11 @@ export async function generateStory(args: {
       tick(`scene ${i + 1}: animating`);
       const vid = await provider.generateVideo({
         imageUrl: keyframeUrl,
-        prompt: buildMotionPrompt(scene.visualDirection, shotType),
+        prompt: buildMotionPrompt({
+          visualDirection: scene.visualDirection,
+          format,
+          shotType,
+        }),
         durationSec: scene.durationSec,
         mode,
       });
@@ -268,23 +258,6 @@ export async function generateStory(args: {
   } finally {
     await rm(tmp, { recursive: true, force: true });
   }
-}
-
-function buildMotionPrompt(visualDirection: string, shotType: "subject" | "scenery" | "detail" = "subject") {
-  const base = visualDirection.trim();
-  const motion =
-    shotType === "subject"
-      ? "subtle natural motion: gentle head turn, slow blink, soft breathing, hair shifting in air, ambient camera drift, cinematic 24fps"
-      : shotType === "scenery"
-        ? "slow cinematic camera move: gentle pan or push-in, atmospheric parallax, light shifting through clouds or foliage, ambient environmental motion (water, wind, distant traffic), 24fps"
-        : "macro focus pull, slight handheld breathing, gentle subject motion, 24fps";
-  const avoid =
-    shotType === "subject"
-      ? "rubbing hands, repetitive gestures, exaggerated facial expressions, morphing limbs"
-      : shotType === "scenery"
-        ? "people walking into frame, generic stock motion, jittery camera, unnatural zooms"
-        : "morphing object shape, jittery focus, talking heads";
-  return `${base}. ${motion}. avoid: ${avoid}.`;
 }
 
 async function materializeToDisk(url: string, destPath: string): Promise<void> {

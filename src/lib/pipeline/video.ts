@@ -12,6 +12,8 @@ import { persistFromFile, persistFromUrl } from "../storage";
 import { toAbsoluteUrl } from "../publicUrl";
 import { generateScript } from "../providers/anthropic";
 import { burnCaptionsAndCrop } from "./postprocess";
+import { buildKeyframePrompt, buildKeyframeNegative, buildMotionPrompt } from "../promptStyle";
+import type { Format } from "../formatPresets";
 
 const VOICE_ENABLED = process.env.VOICE_ENABLED === "1";
 const LIPSYNC_ENABLED = process.env.LIPSYNC_ENABLED === "1";
@@ -22,6 +24,7 @@ export async function generateVideo(args: {
   durationSec?: 5 | 8;
   mode?: QualityMode;
   variantCount?: number;
+  format?: Format;
   // When set, animate this existing asset directly instead of generating a
   // fresh keyframe. Lets users pick a great image they already created
   // (Seedream / Flux Pro / hand-curated) without paying for a re-render.
@@ -45,6 +48,7 @@ export async function generateVideo(args: {
   )[0];
   if (!inf) throw new Error("influencer not found");
   if (!inf.canonicalImageId) throw new Error("influencer has no canonical image — pick one first");
+  const format: Format = args.format ?? (inf.persona.defaultFormat as Format) ?? "cinematic";
 
   const canon = (
     await db.select().from(schema.assets).where(eq(schema.assets.id, inf.canonicalImageId)).limit(1)
@@ -97,14 +101,24 @@ export async function generateVideo(args: {
     args.onProgress?.(15, "using selected image as keyframe");
     keyframeUrl = toAbsoluteUrl(src.url);
   } else {
-    args.onProgress?.(12, `rendering keyframe (${mode})`);
+    args.onProgress?.(12, `rendering keyframe (${mode}/${format})`);
     const keyframe = await provider.generateImage({
-      prompt: `${inf.persona.visualPrompt}, ${script.visualDirection}`,
-      negativePrompt: inf.persona.negativePrompt,
+      prompt: buildKeyframePrompt({
+        visualDirection: script.visualDirection,
+        format,
+        shotType: "subject",
+        characterPrompt: inf.persona.visualPrompt,
+      }),
+      negativePrompt: buildKeyframeNegative({
+        format,
+        shotType: "subject",
+        personaNegative: inf.persona.negativePrompt,
+      }),
       aspectRatio: "9:16",
       faceReferenceUrl: toAbsoluteUrl(canon.url),
       count: 1,
       mode,
+      idWeightOverride: 0.7,
     });
     keyframeUrl = keyframe.images[0].url;
 
@@ -164,7 +178,11 @@ export async function generateVideo(args: {
 
       const video = await provider.generateVideo({
         imageUrl: keyframeUrl,
-        prompt: buildMotionPrompt(script.visualDirection),
+        prompt: buildMotionPrompt({
+          visualDirection: script.visualDirection,
+          format,
+          shotType: "subject",
+        }),
         durationSec: dur,
         mode,
       });
@@ -241,13 +259,6 @@ export async function generateVideo(args: {
 // generic gestures (hands rubbing, fidgeting) when the motion is vague,
 // which reads like AI tell-tale movement. Adding explicit cinematic motion
 // cues + an anti-pattern negative steers them toward natural ambient motion.
-function buildMotionPrompt(visualDirection: string) {
-  const base = visualDirection.trim();
-  const motionHints =
-    "subtle natural motion: gentle head turn, slow blink, soft breathing, hair shifting in air, ambient camera drift, cinematic 24fps";
-  return `${base}. ${motionHints}. avoid: rubbing hands, repetitive gestures, exaggerated facial expressions, morphing limbs.`;
-}
-
 function asMessage(e: unknown) {
   return e instanceof Error ? e.message.slice(0, 100) : String(e).slice(0, 100);
 }

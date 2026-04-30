@@ -133,6 +133,8 @@ export async function generateSequentialBeats(args: {
   beatCount: number;
   durationSecPerBeat: number;
   shotMix?: "talking" | "mixed" | "travel";
+  format?: import("../formatPresets").Format;
+  formatBeatPattern?: string;
 }) {
   const c = getClient();
   if (!c) return mockBeats(args);
@@ -145,6 +147,12 @@ export async function generateSequentialBeats(args: {
   const minWords = Math.max(8, Math.round(totalDurationSec * 1.8));
   const maxWords = Math.round(totalDurationSec * 2.4);
   const shotMix = args.shotMix ?? "mixed";
+  const format = args.format ?? "cinematic";
+  const formatBeatPattern = args.formatBeatPattern ?? "";
+
+  const formatBlock = formatBeatPattern
+    ? `\n\nFORMAT: ${format}\n${formatBeatPattern}\nIMPORTANT: visualDirection language must match this format. For UGC formats avoid "cinematic", "35mm", "editorial", "shallow depth of field" — write like an iPhone capture (handheld, vertical, selfie POV, friend filming, mirror selfie, kitchen counter, etc).`
+    : "";
 
   const mixGuidance =
     shotMix === "talking"
@@ -165,7 +173,7 @@ Each beat has a "shotType":
 - "scenery" — pure environment B-roll: landscapes, architecture, streets, transit, weather. NO person in frame. Lean into the location. Think travel-doc cinematography.
 - "detail" — close-up cutaway: food, hands, an object, a sign, fabric texture, footprints. Hyper-specific, macro framing.
 
-${mixGuidance}
+${mixGuidance}${formatBlock}
 
 Hard rules:
 - Each visualDirection MUST reference the specific topic elements (location, prop, action, time of day) by name. "approaching the Eiffel Tower's iron base", not "approaching a tower". For scenery/detail shots, double down on environmental specifics — "rusted padlocks on the Pont des Arts railing" beats "a bridge".

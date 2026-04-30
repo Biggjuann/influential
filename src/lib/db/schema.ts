@@ -37,6 +37,14 @@ export const jobs = pgTable("jobs", {
 
 export type ShotType = "subject" | "scenery" | "detail";
 export type ShotMix = "talking" | "mixed" | "travel";
+export type Format =
+  | "ugc"
+  | "tutorial"
+  | "unboxing"
+  | "product_review"
+  | "try_on"
+  | "travel"
+  | "cinematic";
 
 export type StoryScene = {
   visualDirection: string;
@@ -53,6 +61,7 @@ export const stories = pgTable("stories", {
   fullScript: text("full_script").notNull(),
   scenes: jsonb("scenes").$type<StoryScene[]>().notNull(),
   mode: text("mode", { enum: ["draft", "standard", "premium"] }).notNull().default("standard"),
+  format: text("format").notNull().default("cinematic"),
   status: text("status", { enum: ["queued", "rendering", "done", "error"] }).notNull().default("queued"),
   outputAssetId: text("output_asset_id"),
   error: text("error"),
@@ -99,6 +108,7 @@ export type Persona = {
   visualPrompt: string;
   negativePrompt: string;
   captionStyle?: CaptionStyleConfig;
+  defaultFormat?: Format;
 };
 
 export type Influencer = typeof influencers.$inferSelect;

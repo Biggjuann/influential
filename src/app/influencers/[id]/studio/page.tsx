@@ -38,6 +38,7 @@ export default async function StudioPage({ params }: { params: Promise<{ id: str
           influencerId={inf.id}
           hasCanonical={!!canonical}
           galleryImages={images.map((i) => ({ id: i.id, url: i.url }))}
+          defaultFormat={inf.persona.defaultFormat ?? "cinematic"}
         />
       </div>
 

@@ -54,6 +54,9 @@ const PersonaPatch = z.object({
   visualPrompt: z.string().optional(),
   negativePrompt: z.string().optional(),
   captionStyle: CaptionStylePatch,
+  defaultFormat: z
+    .enum(["ugc", "tutorial", "unboxing", "product_review", "try_on", "travel", "cinematic"])
+    .optional(),
 });
 
 const Body = z.object({

@@ -3,6 +3,8 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/Button";
 import { JobProgress } from "@/components/JobProgress";
+import { FormatPicker } from "@/components/FormatPicker";
+import type { Format } from "@/lib/formatPresets";
 
 type Mode = "draft" | "standard" | "premium";
 type ScriptMode = "auto" | "custom";
@@ -36,13 +38,16 @@ export function StudioClient({
   influencerId,
   hasCanonical,
   galleryImages,
+  defaultFormat,
 }: {
   influencerId: string;
   hasCanonical: boolean;
   galleryImages: { id: string; url: string }[];
+  defaultFormat: Format;
 }) {
   const router = useRouter();
   const [topic, setTopic] = useState("");
+  const [format, setFormat] = useState<Format>(defaultFormat);
   const [duration, setDuration] = useState<5 | 8>(5);
   const [mode, setMode] = useState<Mode>("standard");
   const [variantCount, setVariantCount] = useState(1);
@@ -82,6 +87,7 @@ export function StudioClient({
       mode,
       variantCount,
       shotMix,
+      format,
       sourceImageId: sourceImageId ?? undefined,
     };
     if (scriptMode === "custom") {
@@ -225,6 +231,13 @@ export function StudioClient({
             )}
           </div>
         )}
+
+        <FormatPicker
+          value={format}
+          onChange={setFormat}
+          label="Format"
+          hint="UGC = phone-shot. Cinematic = editorial."
+        />
 
         <div>
           <div className="text-sm font-medium mb-1.5">Quality</div>
