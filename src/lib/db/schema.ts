@@ -55,6 +55,32 @@ export const stories = pgTable("stories", {
   createdAt: bigint("created_at", { mode: "number" }).notNull().default(sql`extract(epoch from now())::bigint`),
 });
 
+export type CaptionStyleConfig = {
+  font?: string;
+  fontSize?: number;
+  weight?: 400 | 600 | 700 | 800;
+  italic?: boolean;
+  uppercase?: boolean;
+  color?: string;
+  strokeColor?: string;
+  strokeWidth?: number;
+  position?: "top" | "center" | "bottom";
+  background?: {
+    color?: string;
+    opacity?: number;
+    paddingX?: number;
+    paddingY?: number;
+    radius?: number;
+  } | null;
+  shadow?: {
+    offsetX?: number;
+    offsetY?: number;
+    blur?: number;
+    color?: string;
+    opacity?: number;
+  } | null;
+};
+
 export type Persona = {
   name: string;
   age: number;
@@ -68,6 +94,7 @@ export type Persona = {
   contentPillars: string[];
   visualPrompt: string;
   negativePrompt: string;
+  captionStyle?: CaptionStyleConfig;
 };
 
 export type Influencer = typeof influencers.$inferSelect;

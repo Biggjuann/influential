@@ -6,6 +6,40 @@ import { deleteByKey } from "@/lib/storage";
 
 export const runtime = "nodejs";
 
+const CaptionStylePatch = z
+  .object({
+    font: z.string().optional(),
+    fontSize: z.number().optional(),
+    weight: z.union([z.literal(400), z.literal(600), z.literal(700), z.literal(800)]).optional(),
+    italic: z.boolean().optional(),
+    uppercase: z.boolean().optional(),
+    color: z.string().optional(),
+    strokeColor: z.string().optional(),
+    strokeWidth: z.number().optional(),
+    position: z.enum(["top", "center", "bottom"]).optional(),
+    background: z
+      .object({
+        color: z.string().optional(),
+        opacity: z.number().optional(),
+        paddingX: z.number().optional(),
+        paddingY: z.number().optional(),
+        radius: z.number().optional(),
+      })
+      .nullable()
+      .optional(),
+    shadow: z
+      .object({
+        offsetX: z.number().optional(),
+        offsetY: z.number().optional(),
+        blur: z.number().optional(),
+        color: z.string().optional(),
+        opacity: z.number().optional(),
+      })
+      .nullable()
+      .optional(),
+  })
+  .optional();
+
 const PersonaPatch = z.object({
   name: z.string().optional(),
   age: z.number().optional(),
@@ -19,6 +53,7 @@ const PersonaPatch = z.object({
   contentPillars: z.array(z.string()).optional(),
   visualPrompt: z.string().optional(),
   negativePrompt: z.string().optional(),
+  captionStyle: CaptionStylePatch,
 });
 
 const Body = z.object({

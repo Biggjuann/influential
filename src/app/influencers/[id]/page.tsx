@@ -53,6 +53,7 @@ export default async function InfluencerPage({ params }: { params: Promise<{ id:
             initialName={inf.name}
             initialNiche={inf.niche}
             initialPersona={inf.persona}
+            initialVoiceRefUrl={inf.voiceRefUrl}
           />
           <Link href={`/influencers/${inf.id}/reels/new`}>
             <Button variant="secondary">🎞 New reel</Button>

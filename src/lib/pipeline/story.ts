@@ -145,7 +145,10 @@ export async function generateStory(args: {
     let captionPng: string | undefined;
     if (story.globalCaption.trim()) {
       tick("caption overlay");
-      const png = await renderCaptionPng({ text: story.globalCaption.trim() });
+      const png = await renderCaptionPng({
+        text: story.globalCaption.trim(),
+        style: inf.persona.captionStyle ?? undefined,
+      });
       captionPng = join(tmp, "caption.png");
       await writeFile(captionPng, png);
     } else {

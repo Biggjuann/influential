@@ -140,6 +140,15 @@ export async function readAssetStream(key: string): Promise<{
   return { stream, size: info.size, contentType: ct };
 }
 
+/** Persist a buffer (e.g. uploaded file) into storage. */
+export async function persistFromBuffer(
+  buf: Buffer,
+  opts: { key: string; ext: string },
+): Promise<{ url: string; key: string }> {
+  await writeBuffer(opts.key, buf, contentTypeFor(opts.ext));
+  return { url: publicUrlFor(opts.key), key: opts.key };
+}
+
 /** Delete a stored object by key. Best-effort: missing keys are ignored. */
 export async function deleteByKey(key: string): Promise<void> {
   if (!key) return;

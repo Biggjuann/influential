@@ -23,8 +23,9 @@ ENV HOSTNAME=0.0.0.0
 # captions render as missing-glyph boxes).
 RUN apt-get update && apt-get install -y --no-install-recommends \
       ca-certificates \
-      fonts-dejavu-core \
+      fonts-dejavu \
       fonts-noto-core \
+      fonts-liberation \
       fontconfig \
     && fc-cache -fv \
     && rm -rf /var/lib/apt/lists/*
