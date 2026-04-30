@@ -29,9 +29,11 @@ const ENDPOINTS = {
   fluxId: process.env.FAL_ENDPOINT_FLUX_ID ?? "fal-ai/flux-pulid",
   // Multi-image conditioning for "influencer holding/using the actual
   // product". Takes both the canonical face image and the product image
-  // as references in one call. Flux Kontext is the best generally-
-  // available option on fal; can be overridden for Seedream Edit, etc.
-  multiRef: process.env.FAL_ENDPOINT_MULTI_REF ?? "fal-ai/flux-pro/kontext-max/multi",
+  // as references in one call. Seedream 4 Edit is the most reliable
+  // multi-ref endpoint on fal (accepts up to 5 image_urls); override with
+  // FAL_ENDPOINT_MULTI_REF for Flux Kontext / Nano Banana / Qwen Edit etc.
+  multiRef:
+    process.env.FAL_ENDPOINT_MULTI_REF ?? "fal-ai/bytedance/seedream/v4/edit",
   // Alternative engines without face-locking — much better at clothing
   // graphics, text on objects, and overall photorealism. Tradeoff: face will
   // resemble the visualPrompt but not be pixel-locked to canonical.
@@ -187,14 +189,16 @@ async function falImage(input: ImageGenInput): Promise<ImageGenOutput> {
   }
 
   // Multi-image conditioning: both face + product references are present.
-  // Flux Kontext multi takes a list of reference images and a prompt that
-  // describes how they should be combined ("subject from image 1 holding
-  // the product from image 2 in [scene]"). Output composites them into a
+  // Seedream 4 Edit (default) takes a list of reference images and a prompt
+  // describing how they should be combined. Output composites them into a
   // believable shot of the influencer using the actual uploaded product.
+  // Both image_size (Seedream/Flux Kontext) and aspect_ratio (some forks)
+  // are sent so endpoint swaps don't require pipeline changes.
   if (input.faceReferenceUrl && input.productReferenceUrl) {
     const data = await call<FluxResult>(ENDPOINTS.multiRef, {
       prompt: input.prompt,
       image_urls: [input.faceReferenceUrl, input.productReferenceUrl],
+      image_size: { width: size.width, height: size.height },
       aspect_ratio: input.aspectRatio ?? "9:16",
       num_images: count,
       seed: input.seed,
