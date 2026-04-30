@@ -3,7 +3,9 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/Button";
 import { FormatPicker } from "@/components/FormatPicker";
+import { RenderTargetBar } from "@/components/RenderTargetBar";
 import type { Format } from "@/lib/formatPresets";
+import type { AspectRatio, Quality } from "@/lib/renderTarget";
 
 type Mode = "draft" | "standard" | "premium";
 
@@ -11,7 +13,7 @@ type ShotType = "subject" | "scenery" | "detail";
 
 type Scene = {
   visualDirection: string;
-  durationSec: 5 | 8;
+  durationSec: number;
   sourceImageId?: string;
   shotType: ShotType;
 };
@@ -43,6 +45,10 @@ export function NewReelClient({
   const [fullScript, setFullScript] = useState("");
   const [mode, setMode] = useState<Mode>("standard");
   const [format, setFormat] = useState<Format>(defaultFormat);
+  const [aspectRatio, setAspectRatio] = useState<AspectRatio>("9:16");
+  const [quality, setQuality] = useState<Quality>("1080p");
+  // Default-length is the canonical scene duration when adding new scenes.
+  const [defaultSceneLength, setDefaultSceneLength] = useState<number>(5);
   const [scenes, setScenes] = useState<Scene[]>([
     { visualDirection: "", durationSec: 5, shotType: "subject" },
     { visualDirection: "", durationSec: 5, shotType: "subject" },
@@ -61,7 +67,10 @@ export function NewReelClient({
   }
   function addScene() {
     if (scenes.length >= 10) return;
-    setScenes([...scenes, { visualDirection: "", durationSec: 5, shotType: "subject" }]);
+    setScenes([
+      ...scenes,
+      { visualDirection: "", durationSec: defaultSceneLength, shotType: "subject" },
+    ]);
   }
 
   function applyTravelMix() {
@@ -110,6 +119,8 @@ export function NewReelClient({
           scenes,
           mode,
           format,
+          aspectRatio,
+          quality,
         }),
       });
       if (!res.ok) throw new Error(await res.text());
@@ -138,6 +149,22 @@ export function NewReelClient({
           label="Format"
           hint="Picks the visual + motion + scene-pattern style for this reel."
         />
+        <div>
+          <div className="flex items-baseline justify-between mb-2">
+            <span className="text-sm font-medium">Render target</span>
+            <span className="text-xs text-muted">
+              Length here = default for newly added scenes; per-scene override below.
+            </span>
+          </div>
+          <RenderTargetBar
+            aspectRatio={aspectRatio}
+            quality={quality}
+            length={defaultSceneLength}
+            onAspectChange={setAspectRatio}
+            onQualityChange={setQuality}
+            onLengthChange={setDefaultSceneLength}
+          />
+        </div>
         <Field
           label="Persistent caption"
           hint="Burned into every scene. Leave blank for no caption."
@@ -255,11 +282,11 @@ export function NewReelClient({
               </div>
               <div className="flex items-center gap-2">
                 <span className="text-xs text-muted">Duration</span>
-                {[5, 8].map((d) => (
+                {[5, 8, 10, 12, 15].map((d) => (
                   <button
                     type="button"
                     key={d}
-                    onClick={() => setScene(i, { durationSec: d as 5 | 8 })}
+                    onClick={() => setScene(i, { durationSec: d })}
                     className={`h-7 px-3 text-xs rounded-md border transition-colors ${
                       scene.durationSec === d
                         ? "border-accent bg-accent/15"

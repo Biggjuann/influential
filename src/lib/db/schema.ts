@@ -48,7 +48,9 @@ export type Format =
 
 export type StoryScene = {
   visualDirection: string;
-  durationSec: 5 | 8;
+  /** Per-clip duration in seconds. Most I2V models cap around 8-10s; longer
+   * values get clamped or split into chained clips by the underlying model. */
+  durationSec: number;
   sourceImageId?: string;
   shotType?: ShotType;
 };
@@ -62,6 +64,8 @@ export const stories = pgTable("stories", {
   scenes: jsonb("scenes").$type<StoryScene[]>().notNull(),
   mode: text("mode", { enum: ["draft", "standard", "premium"] }).notNull().default("standard"),
   format: text("format").notNull().default("cinematic"),
+  aspectRatio: text("aspect_ratio").notNull().default("9:16"),
+  quality: text("quality").notNull().default("1080p"),
   status: text("status", { enum: ["queued", "rendering", "done", "error"] }).notNull().default("queued"),
   outputAssetId: text("output_asset_id"),
   error: text("error"),

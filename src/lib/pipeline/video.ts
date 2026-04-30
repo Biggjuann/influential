@@ -14,6 +14,7 @@ import { generateScript } from "../providers/anthropic";
 import { burnCaptionsAndCrop } from "./postprocess";
 import { buildKeyframePrompt, buildKeyframeNegative, buildMotionPrompt } from "../promptStyle";
 import type { Format } from "../formatPresets";
+import { imageGenAspect, type AspectRatio, type Quality } from "../renderTarget";
 
 const VOICE_ENABLED = process.env.VOICE_ENABLED === "1";
 const LIPSYNC_ENABLED = process.env.LIPSYNC_ENABLED === "1";
@@ -21,10 +22,12 @@ const LIPSYNC_ENABLED = process.env.LIPSYNC_ENABLED === "1";
 export async function generateVideo(args: {
   influencerId: string;
   topic: string;
-  durationSec?: 5 | 8;
+  durationSec?: number;
   mode?: QualityMode;
   variantCount?: number;
   format?: Format;
+  aspectRatio?: AspectRatio;
+  quality?: Quality;
   // When set, animate this existing asset directly instead of generating a
   // fresh keyframe. Lets users pick a great image they already created
   // (Seedream / Flux Pro / hand-curated) without paying for a re-render.
@@ -39,8 +42,10 @@ export async function generateVideo(args: {
   onProgress?: (p: number, step: string) => void;
 }) {
   await ready();
-  const dur = args.durationSec ?? 5;
+  const dur = Math.max(5, Math.min(15, args.durationSec ?? 5));
   const mode: QualityMode = args.mode ?? "standard";
+  const aspectRatio: AspectRatio = args.aspectRatio ?? "9:16";
+  const quality: Quality = args.quality ?? "1080p";
   const variantCount = Math.max(1, Math.min(5, args.variantCount ?? 1));
 
   const inf = (
@@ -114,7 +119,7 @@ export async function generateVideo(args: {
         shotType: "subject",
         personaNegative: inf.persona.negativePrompt,
       }),
-      aspectRatio: "9:16",
+      aspectRatio: imageGenAspect(aspectRatio),
       faceReferenceUrl: toAbsoluteUrl(canon.url),
       count: 1,
       mode,
@@ -209,6 +214,8 @@ export async function generateVideo(args: {
         captionText: script.captionText,
         captionStyle: inf.persona.captionStyle ?? undefined,
         durationSec: dur,
+        aspectRatio,
+        quality,
       });
 
       const persisted = await persistFromFile(outputPath, {

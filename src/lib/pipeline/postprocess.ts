@@ -6,6 +6,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { buildAss } from "../captionAss";
 import type { CaptionStyleConfig } from "../db/schema";
+import { dimensionsFor, type AspectRatio, type Quality } from "../renderTarget";
 
 // Prefer system ffmpeg (libass + real fonts) over the bundled static binary.
 const SYSTEM_FFMPEG = "/usr/bin/ffmpeg";
@@ -16,9 +17,8 @@ if (ffmpegBin) ffmpeg.setFfmpegPath(ffmpegBin);
 const HAS_LIBASS = ffmpegBin === SYSTEM_FFMPEG;
 
 /**
- * Crop/scale to TikTok 1080x1920. Optionally burn a caption via libass.
- * Style is honored when libass is available (system ffmpeg); otherwise the
- * caption is skipped (the UI still shows it as an overlay above the player).
+ * Crop/scale to the chosen output box and optionally burn a caption via libass.
+ * Defaults to 9:16 / 1080p (TikTok / Reels) when no aspect/quality given.
  */
 export async function burnCaptionsAndCrop(args: {
   inputPath: string;
@@ -26,10 +26,17 @@ export async function burnCaptionsAndCrop(args: {
   captionText: string;
   captionStyle?: CaptionStyleConfig;
   durationSec?: number;
+  aspectRatio?: AspectRatio;
+  quality?: Quality;
 }): Promise<void> {
+  const { width, height } = dimensionsFor(
+    args.aspectRatio ?? "9:16",
+    args.quality ?? "1080p",
+  );
+  const targetAspect = width / height;
   const filters: string[] = [
-    "scale=w=if(gt(a\\,9/16)\\,-2\\,1080):h=if(gt(a\\,9/16)\\,1920\\,-2)",
-    "crop=1080:1920",
+    `scale=w=if(gt(a\\,${targetAspect})\\,-2\\,${width}):h=if(gt(a\\,${targetAspect})\\,${height}\\,-2)`,
+    `crop=${width}:${height}`,
   ];
 
   let cleanupDir: string | null = null;
@@ -42,6 +49,8 @@ export async function burnCaptionsAndCrop(args: {
         text: args.captionText.trim(),
         style: args.captionStyle,
         durationSec: args.durationSec ?? 30,
+        videoW: width,
+        videoH: height,
       }),
     );
     const safe = assPath.replace(/\\/g, "/").replace(/:/g, "\\:");

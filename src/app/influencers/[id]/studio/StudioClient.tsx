@@ -4,7 +4,9 @@ import { useRouter } from "next/navigation";
 import { Button } from "@/components/Button";
 import { JobProgress } from "@/components/JobProgress";
 import { FormatPicker } from "@/components/FormatPicker";
+import { RenderTargetBar } from "@/components/RenderTargetBar";
 import type { Format } from "@/lib/formatPresets";
+import type { AspectRatio, Quality } from "@/lib/renderTarget";
 
 type Mode = "draft" | "standard" | "premium";
 type ScriptMode = "auto" | "custom";
@@ -48,7 +50,9 @@ export function StudioClient({
   const router = useRouter();
   const [topic, setTopic] = useState("");
   const [format, setFormat] = useState<Format>(defaultFormat);
-  const [duration, setDuration] = useState<5 | 8>(5);
+  const [duration, setDuration] = useState<number>(5);
+  const [aspectRatio, setAspectRatio] = useState<AspectRatio>("9:16");
+  const [quality, setQuality] = useState<Quality>("1080p");
   const [mode, setMode] = useState<Mode>("standard");
   const [variantCount, setVariantCount] = useState(1);
   const [shotMix, setShotMix] = useState<ShotMix>("mixed");
@@ -88,6 +92,8 @@ export function StudioClient({
       variantCount,
       shotMix,
       format,
+      aspectRatio,
+      quality,
       sourceImageId: sourceImageId ?? undefined,
     };
     if (scriptMode === "custom") {
@@ -262,23 +268,19 @@ export function StudioClient({
           </div>
         </div>
 
+        <div>
+          <div className="text-sm font-medium mb-1.5">Render target</div>
+          <RenderTargetBar
+            aspectRatio={aspectRatio}
+            quality={quality}
+            length={duration}
+            onAspectChange={setAspectRatio}
+            onQualityChange={setQuality}
+            onLengthChange={setDuration}
+          />
+        </div>
+
         <div className="flex flex-wrap items-center gap-6">
-          <div>
-            <div className="text-sm font-medium mb-1.5">Duration</div>
-            <div className="flex items-center gap-2">
-              {[5, 8].map((d) => (
-                <button
-                  key={d}
-                  onClick={() => setDuration(d as 5 | 8)}
-                  className={`h-9 px-3 text-sm rounded-md border transition-colors ${
-                    duration === d ? "border-accent bg-accent/15" : "border-border hover:bg-border/40"
-                  }`}
-                >
-                  {d}s
-                </button>
-              ))}
-            </div>
-          </div>
           <div>
             <div className="text-sm font-medium mb-1.5">
               Beats

@@ -12,7 +12,11 @@ import { getFormat, type Format } from "@/lib/formatPresets";
 const Body = z.object({
   influencerId: z.string(),
   topic: z.string().min(1),
-  durationSec: z.union([z.literal(5), z.literal(8)]).default(5),
+  durationSec: z.number().int().min(5).max(15).default(5),
+  aspectRatio: z
+    .enum(["auto", "9:16", "16:9", "1:1", "3:4", "4:3", "21:9"])
+    .default("9:16"),
+  quality: z.enum(["480p", "720p", "1080p"]).default("1080p"),
   mode: z.enum(["draft", "standard", "premium"]).default("standard"),
   variantCount: z.number().int().min(1).max(5).default(1),
   shotMix: z.enum(["talking", "mixed", "travel"]).default("mixed"),
@@ -84,6 +88,8 @@ export async function POST(req: NextRequest) {
       })),
       mode: body.mode,
       format,
+      aspectRatio: body.aspectRatio,
+      quality: body.quality,
       status: "rendering",
     });
 
@@ -116,6 +122,8 @@ export async function POST(req: NextRequest) {
           mode: body.mode,
           variantCount: body.variantCount,
           format: body.format,
+          aspectRatio: body.aspectRatio,
+          quality: body.quality,
           sourceImageId: body.sourceImageId,
           customScript: body.customScript,
           onProgress: update,

@@ -77,13 +77,17 @@ async function ensureSchema() {
       scenes JSONB NOT NULL,
       mode TEXT NOT NULL DEFAULT 'standard',
       format TEXT NOT NULL DEFAULT 'cinematic',
+      aspect_ratio TEXT NOT NULL DEFAULT '9:16',
+      quality TEXT NOT NULL DEFAULT '1080p',
       status TEXT NOT NULL DEFAULT 'queued',
       output_asset_id TEXT,
       error TEXT,
       created_at BIGINT NOT NULL DEFAULT extract(epoch from now())::bigint
     );
-    -- backfill for existing deployments that pre-date the column
+    -- backfill for existing deployments that pre-date the columns
     ALTER TABLE stories ADD COLUMN IF NOT EXISTS format TEXT NOT NULL DEFAULT 'cinematic';
+    ALTER TABLE stories ADD COLUMN IF NOT EXISTS aspect_ratio TEXT NOT NULL DEFAULT '9:16';
+    ALTER TABLE stories ADD COLUMN IF NOT EXISTS quality TEXT NOT NULL DEFAULT '1080p';
     CREATE INDEX IF NOT EXISTS idx_assets_influencer ON assets(influencer_id);
     CREATE INDEX IF NOT EXISTS idx_jobs_influencer ON jobs(influencer_id);
     CREATE INDEX IF NOT EXISTS idx_stories_influencer ON stories(influencer_id);

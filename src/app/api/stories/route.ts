@@ -15,7 +15,7 @@ const Body = z.object({
     .array(
       z.object({
         visualDirection: z.string().min(1),
-        durationSec: z.union([z.literal(5), z.literal(8)]).default(5),
+        durationSec: z.number().int().min(5).max(15).default(5),
         sourceImageId: z.string().optional(),
         shotType: z.enum(["subject", "scenery", "detail"]).default("subject"),
       }),
@@ -26,6 +26,10 @@ const Body = z.object({
   format: z
     .enum(["ugc", "tutorial", "unboxing", "product_review", "try_on", "travel", "cinematic"])
     .default("cinematic"),
+  aspectRatio: z
+    .enum(["auto", "9:16", "16:9", "1:1", "3:4", "4:3", "21:9"])
+    .default("9:16"),
+  quality: z.enum(["480p", "720p", "1080p"]).default("1080p"),
 });
 
 export const runtime = "nodejs";
@@ -58,6 +62,8 @@ export async function POST(req: NextRequest) {
     scenes: body.scenes,
     mode: body.mode,
     format: body.format,
+    aspectRatio: body.aspectRatio,
+    quality: body.quality,
     status: "queued",
   });
 

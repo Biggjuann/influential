@@ -23,7 +23,9 @@ export type ImageGenOutput = {
 export type VideoGenInput = {
   imageUrl: string;
   prompt: string;
-  durationSec: 5 | 8;
+  /** Requested clip duration in seconds. Underlying models clamp to their
+   * own caps (e.g. Wan 2.2 ~5-8s, Kling 1.6 5-10s, Kling 2 Master to 10s). */
+  durationSec: number;
   mode?: QualityMode;
 };
 

@@ -16,6 +16,12 @@ import { toAbsoluteUrl } from "../publicUrl";
 import { buildAss } from "../captionAss";
 import { buildKeyframePrompt, buildKeyframeNegative, buildMotionPrompt } from "../promptStyle";
 import type { Format } from "../formatPresets";
+import {
+  dimensionsFor,
+  imageGenAspect,
+  type AspectRatio,
+  type Quality,
+} from "../renderTarget";
 import type { StoryScene } from "../db/schema";
 
 // Prefer system ffmpeg (libass + libfreetype + a real font library) over the
@@ -65,6 +71,11 @@ export async function generateStory(args: {
   const provider = getProvider();
   const mode: QualityMode = (story.mode as QualityMode) ?? "standard";
   const format: Format = ((story as { format?: string }).format as Format) ?? "cinematic";
+  const aspectRatio: AspectRatio =
+    ((story as { aspectRatio?: string }).aspectRatio as AspectRatio) ?? "9:16";
+  const quality: Quality = ((story as { quality?: string }).quality as Quality) ?? "1080p";
+  const target = dimensionsFor(aspectRatio, quality);
+  const imgAspect = imageGenAspect(aspectRatio);
   const totalSteps =
     story.scenes.length /* keyframes */ + story.scenes.length /* animations */ + 4;
   let step = 0;
@@ -113,7 +124,7 @@ export async function generateStory(args: {
             shotType,
             personaNegative: isSubject ? inf.persona.negativePrompt : undefined,
           }),
-          aspectRatio: "9:16",
+          aspectRatio: imgAspect,
           faceReferenceUrl: isSubject && canon ? toAbsoluteUrl(canon.url) : undefined,
           count: 1,
           mode,
@@ -150,10 +161,11 @@ export async function generateStory(args: {
     const audioPath = join(tmp, "voice.wav");
     await materializeToDisk(tts.audioUrl, audioPath);
 
-    // 3. Concat + scale all scene clips into one silent reel.
+    // 3. Concat + scale all scene clips into one silent reel at the chosen
+    //    aspect ratio + quality.
     tick("stitching scenes");
     const concatVideoPath = join(tmp, "concat.mp4");
-    await concatScenes(sceneVideoPaths, concatVideoPath);
+    await concatScenes(sceneVideoPaths, concatVideoPath, target);
 
     // 3a. Length match. If the voiceover is longer than the stitched video
     //     we hold the final frame so the voice never gets cut off mid-word
@@ -182,6 +194,8 @@ export async function generateStory(args: {
             "20",
             "-pix_fmt",
             "yuv420p",
+            "-r",
+            "30",
             "-an",
             paddedPath,
           ]);
@@ -204,6 +218,8 @@ export async function generateStory(args: {
           text: story.globalCaption.trim(),
           style: inf.persona.captionStyle ?? undefined,
           durationSec: finalDurationSec,
+          videoW: target.width,
+          videoH: target.height,
         });
         assPath = join(tmp, "caption.ass");
         await writeFile(assPath, ass);
@@ -283,14 +299,23 @@ async function materializeToDisk(url: string, destPath: string): Promise<void> {
   await writeFile(destPath, buf);
 }
 
-// Scale each scene to 1080x1920, normalize SAR, then concat. We re-encode
-// rather than stream-copy because input clips can have different codecs,
-// frame rates, and resolutions depending on the video model.
-async function concatScenes(inputs: string[], outputPath: string): Promise<void> {
+// Scale each scene to the target dimensions, normalize SAR, then concat.
+// Each input clip might have a different aspect ratio than our target — we
+// scale-to-cover then crop, so the frame is filled without letterboxing.
+async function concatScenes(
+  inputs: string[],
+  outputPath: string,
+  target: { width: number; height: number },
+): Promise<void> {
+  const { width, height } = target;
+  const targetAspect = width / height;
+
   const filterParts: string[] = [];
   inputs.forEach((_, i) => {
+    // Scale-to-cover: if input aspect > target, scale by height; else scale
+    // by width. Then center-crop to the exact target box.
     filterParts.push(
-      `[${i}:v]scale=w=if(gt(a\\,9/16)\\,-2\\,1080):h=if(gt(a\\,9/16)\\,1920\\,-2),crop=1080:1920,setsar=1,fps=30[v${i}]`,
+      `[${i}:v]scale=w=if(gt(a\\,${targetAspect})\\,-2\\,${width}):h=if(gt(a\\,${targetAspect})\\,${height}\\,-2),crop=${width}:${height},setsar=1,fps=30[v${i}]`,
     );
   });
   const concatList = inputs.map((_, i) => `[v${i}]`).join("");
