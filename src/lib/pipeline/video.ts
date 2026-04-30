@@ -189,6 +189,8 @@ export async function generateVideo(args: {
         inputPath,
         outputPath,
         captionText: script.captionText,
+        captionStyle: inf.persona.captionStyle ?? undefined,
+        durationSec: dur,
       });
 
       const persisted = await persistFromFile(outputPath, {

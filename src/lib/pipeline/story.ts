@@ -4,18 +4,27 @@ import { eq } from "drizzle-orm";
 import { nanoid } from "nanoid";
 import { tmpdir } from "node:os";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { spawn } from "node:child_process";
-import ffmpegPath from "ffmpeg-static";
+import ffmpegStaticPath from "ffmpeg-static";
 import { getProvider } from "../providers";
 import type { QualityMode } from "../providers/types";
 import { persistFromFile } from "../storage";
 import { toAbsoluteUrl } from "../publicUrl";
-import { renderCaptionPng } from "../captionOverlay";
+import { buildAss } from "../captionAss";
 import type { StoryScene } from "../db/schema";
 
-const ffmpegBin = (ffmpegPath as unknown as string | null) ?? "ffmpeg";
+// Prefer system ffmpeg (libass + libfreetype + a real font library) over the
+// bundled static binary, which lacks both. The runtime Docker image installs
+// system ffmpeg + fonts; ffmpeg-static stays as a fallback for environments
+// where the system binary isn't present (e.g. local dev on a fresh laptop).
+const SYSTEM_FFMPEG = "/usr/bin/ffmpeg";
+const ffmpegBin = existsSync(SYSTEM_FFMPEG)
+  ? SYSTEM_FFMPEG
+  : ((ffmpegStaticPath as unknown as string | null) ?? "ffmpeg");
+const HAS_LIBASS = ffmpegBin === SYSTEM_FFMPEG;
 
 // Same anchors as the gallery generator — keep behaviour consistent so a
 // scene rendered via the studio looks like one rendered via a story beat.
@@ -141,27 +150,35 @@ export async function generateStory(args: {
     const concatVideoPath = join(tmp, "concat.mp4");
     await concatScenes(sceneVideoPaths, concatVideoPath);
 
-    // 4. Generate caption PNG overlay (sharp, since drawtext isn't available).
-    let captionPng: string | undefined;
+    // 4. Generate ASS subtitle for caption overlay (libass, broadcast-grade).
+    //    Falls back to skipping captions if we're stuck on ffmpeg-static
+    //    (which lacks libass) — better to ship a clean video than to fail.
+    let assPath: string | undefined;
     if (story.globalCaption.trim()) {
       tick("caption overlay");
-      const png = await renderCaptionPng({
-        text: story.globalCaption.trim(),
-        style: inf.persona.captionStyle ?? undefined,
-      });
-      captionPng = join(tmp, "caption.png");
-      await writeFile(captionPng, png);
+      if (HAS_LIBASS) {
+        // Pin the caption to the full duration of the audio track. ffmpeg
+        // -shortest later will trim to the shorter of audio / video.
+        const durationSec = story.scenes.reduce((s, x) => s + x.durationSec, 0);
+        const ass = buildAss({
+          text: story.globalCaption.trim(),
+          style: inf.persona.captionStyle ?? undefined,
+          durationSec,
+        });
+        assPath = join(tmp, "caption.ass");
+        await writeFile(assPath, ass);
+      }
     } else {
       step += 1;
     }
 
-    // 5. Mux audio + (optional) caption overlay onto the concatenated video.
+    // 5. Mux audio + (optional) caption subtitle onto the concatenated video.
     tick("final mux");
     const finalPath = join(tmp, "final.mp4");
     await muxAudioAndCaption({
       videoPath: concatVideoPath,
       audioPath,
-      captionPng,
+      assPath,
       outputPath: finalPath,
     });
 
@@ -274,18 +291,20 @@ async function concatScenes(inputs: string[], outputPath: string): Promise<void>
 async function muxAudioAndCaption(opts: {
   videoPath: string;
   audioPath: string;
-  captionPng?: string;
+  assPath?: string;
   outputPath: string;
 }): Promise<void> {
   const args: string[] = ["-y", "-i", opts.videoPath, "-i", opts.audioPath];
-  if (opts.captionPng) args.push("-i", opts.captionPng);
 
-  if (opts.captionPng) {
-    // [0:v] = video, [2:v] = caption PNG. Overlay PNG at top-left (PNG is
-    // already sized to the full frame, so 0:0 places the caption where it
-    // was rendered in the SVG).
-    args.push("-filter_complex", "[0:v][2:v]overlay=0:0[v]");
-    args.push("-map", "[v]", "-map", "1:a");
+  if (opts.assPath) {
+    // libass subtitle burn-in. The path needs careful escaping inside the
+    // filtergraph (colons and backslashes are filter separators in ffmpeg's
+    // bizarre filter syntax). Sticking the .ass in the same tmp dir and
+    // referencing it by absolute path works because tmp paths don't contain
+    // characters that need filter-level escaping; we still escape `:` to be
+    // robust on macOS/Windows-style paths.
+    const safe = opts.assPath.replace(/\\/g, "/").replace(/:/g, "\\:");
+    args.push("-vf", `subtitles=${safe}`, "-map", "0:v", "-map", "1:a");
   } else {
     args.push("-map", "0:v", "-map", "1:a");
   }

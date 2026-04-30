@@ -1,65 +1,71 @@
 import "server-only";
-import ffmpegPath from "ffmpeg-static";
+import ffmpegStaticPath from "ffmpeg-static";
 import ffmpeg from "fluent-ffmpeg";
-import { execSync } from "node:child_process";
+import { existsSync, writeFileSync, mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { buildAss } from "../captionAss";
+import type { CaptionStyleConfig } from "../db/schema";
 
-const bin = ffmpegPath as unknown as string | null;
-if (bin) ffmpeg.setFfmpegPath(bin);
+// Prefer system ffmpeg (libass + real fonts) over the bundled static binary.
+const SYSTEM_FFMPEG = "/usr/bin/ffmpeg";
+const ffmpegBin = existsSync(SYSTEM_FFMPEG)
+  ? SYSTEM_FFMPEG
+  : ((ffmpegStaticPath as unknown as string | null) ?? null);
+if (ffmpegBin) ffmpeg.setFfmpegPath(ffmpegBin);
+const HAS_LIBASS = ffmpegBin === SYSTEM_FFMPEG;
 
-// ffmpeg-static ships without libfreetype/libass, so drawtext is unavailable.
-// Detect once at startup; when missing, we skip the caption burn step. The UI
-// renders the caption as an overlay above the player either way. Install a
-// full system ffmpeg if you want captions baked into the file itself.
-const SUPPORTS_DRAWTEXT = (() => {
-  if (!bin) return false;
-  try {
-    const out = execSync(`${bin} -hide_banner -filters 2>&1`, { encoding: "utf8" });
-    return /\bdrawtext\b/.test(out);
-  } catch {
-    return false;
-  }
-})();
-
-// Crop/scale to TikTok 1080x1920. Optionally burn caption text.
+/**
+ * Crop/scale to TikTok 1080x1920. Optionally burn a caption via libass.
+ * Style is honored when libass is available (system ffmpeg); otherwise the
+ * caption is skipped (the UI still shows it as an overlay above the player).
+ */
 export async function burnCaptionsAndCrop(args: {
   inputPath: string;
   outputPath: string;
   captionText: string;
+  captionStyle?: CaptionStyleConfig;
+  durationSec?: number;
 }): Promise<void> {
-  const filters = [
+  const filters: string[] = [
     "scale=w=if(gt(a\\,9/16)\\,-2\\,1080):h=if(gt(a\\,9/16)\\,1920\\,-2)",
     "crop=1080:1920",
   ];
-  if (SUPPORTS_DRAWTEXT) {
-    const text = sanitizeCaption(args.captionText);
-    filters.push(
-      `drawtext=text='${text}':fontcolor=white:fontsize=64:borderw=4:bordercolor=black@0.85:x=(w-text_w)/2:y=h*0.18:line_spacing=10`,
+
+  let cleanupDir: string | null = null;
+  if (HAS_LIBASS && args.captionText.trim()) {
+    cleanupDir = mkdtempSync(join(tmpdir(), "cap-"));
+    const assPath = join(cleanupDir, "caption.ass");
+    writeFileSync(
+      assPath,
+      buildAss({
+        text: args.captionText.trim(),
+        style: args.captionStyle,
+        durationSec: args.durationSec ?? 30,
+      }),
     );
+    const safe = assPath.replace(/\\/g, "/").replace(/:/g, "\\:");
+    filters.push(`subtitles=${safe}`);
   }
 
-  await new Promise<void>((resolve, reject) => {
-    ffmpeg(args.inputPath)
-      .videoFilters(filters)
-      .outputOptions([
-        "-c:v libx264",
-        "-preset veryfast",
-        "-crf 20",
-        "-pix_fmt yuv420p",
-        "-c:a aac",
-        "-b:a 128k",
-        "-movflags +faststart",
-      ])
-      .save(args.outputPath)
-      .on("end", () => resolve())
-      .on("error", reject);
-  });
-}
-
-function sanitizeCaption(s: string) {
-  return s
-    .replace(/\\/g, "\\\\")
-    .replace(/'/g, "\\'")
-    .replace(/:/g, "\\:")
-    .replace(/\n/g, " ")
-    .slice(0, 120);
+  try {
+    await new Promise<void>((resolve, reject) => {
+      ffmpeg(args.inputPath)
+        .videoFilters(filters)
+        .outputOptions([
+          "-c:v libx264",
+          "-preset veryfast",
+          "-crf 20",
+          "-pix_fmt yuv420p",
+          "-c:a aac",
+          "-b:a 128k",
+          "-movflags +faststart",
+        ])
+        .save(args.outputPath)
+        .on("end", () => resolve())
+        .on("error", reject);
+    });
+  } finally {
+    if (cleanupDir) rmSync(cleanupDir, { recursive: true, force: true });
+  }
 }

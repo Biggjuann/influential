@@ -18,15 +18,23 @@ ENV NODE_ENV=production
 ENV PORT=3000
 ENV HOSTNAME=0.0.0.0
 
-# ffmpeg-static ships its own binary; we just need libstdc++, certs, and fonts
-# (sharp's SVG renderer needs system fonts via fontconfig — without them,
-# captions render as missing-glyph boxes).
+# System ffmpeg with libass + libfreetype + libx264 for proper caption
+# rendering (libass via the subtitles filter — broadcast quality, real font
+# kerning, animations). System ffmpeg replaces ffmpeg-static at runtime;
+# the static binary is still bundled for environments where the system one
+# is unavailable.
 RUN apt-get update && apt-get install -y --no-install-recommends \
       ca-certificates \
+      ffmpeg \
+      fontconfig \
       fonts-dejavu \
       fonts-noto-core \
+      fonts-noto-extra \
       fonts-liberation \
-      fontconfig \
+      fonts-roboto \
+      fonts-open-sans \
+      fonts-pacifico \
+      fonts-lobster \
     && fc-cache -fv \
     && rm -rf /var/lib/apt/lists/*
 
