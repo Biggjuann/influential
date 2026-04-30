@@ -30,6 +30,7 @@ const Body = z.object({
     .enum(["auto", "9:16", "16:9", "1:1", "3:4", "4:3", "21:9"])
     .default("9:16"),
   quality: z.enum(["480p", "720p", "1080p"]).default("1080p"),
+  productId: z.string().optional(),
 });
 
 export const runtime = "nodejs";
@@ -64,6 +65,7 @@ export async function POST(req: NextRequest) {
     format: body.format,
     aspectRatio: body.aspectRatio,
     quality: body.quality,
+    productId: body.productId ?? null,
     status: "queued",
   });
 

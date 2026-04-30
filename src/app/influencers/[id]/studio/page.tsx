@@ -24,6 +24,11 @@ export default async function StudioPage({ params }: { params: Promise<{ id: str
     .where(and(eq(schema.assets.influencerId, id), eq(schema.assets.kind, "image")))
     .orderBy(desc(schema.assets.createdAt))
     .limit(12);
+  const products = await db
+    .select()
+    .from(schema.products)
+    .where(eq(schema.products.influencerId, id))
+    .orderBy(desc(schema.products.createdAt));
 
   return (
     <div className="grid grid-cols-1 lg:grid-cols-[1fr_360px] gap-8">
@@ -39,6 +44,7 @@ export default async function StudioPage({ params }: { params: Promise<{ id: str
           hasCanonical={!!canonical}
           galleryImages={images.map((i) => ({ id: i.id, url: i.url }))}
           defaultFormat={inf.persona.defaultFormat ?? "cinematic"}
+          products={products}
         />
       </div>
 

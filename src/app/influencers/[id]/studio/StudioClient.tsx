@@ -5,8 +5,10 @@ import { Button } from "@/components/Button";
 import { JobProgress } from "@/components/JobProgress";
 import { FormatPicker } from "@/components/FormatPicker";
 import { RenderTargetBar } from "@/components/RenderTargetBar";
+import { ProductPicker, PRODUCT_FORMATS } from "@/components/ProductPicker";
 import type { Format } from "@/lib/formatPresets";
 import type { AspectRatio, Quality } from "@/lib/renderTarget";
+import type { Product } from "@/lib/db/schema";
 
 type Mode = "draft" | "standard" | "premium";
 type ScriptMode = "auto" | "custom";
@@ -41,11 +43,13 @@ export function StudioClient({
   hasCanonical,
   galleryImages,
   defaultFormat,
+  products,
 }: {
   influencerId: string;
   hasCanonical: boolean;
   galleryImages: { id: string; url: string }[];
   defaultFormat: Format;
+  products: Product[];
 }) {
   const router = useRouter();
   const [topic, setTopic] = useState("");
@@ -53,6 +57,7 @@ export function StudioClient({
   const [duration, setDuration] = useState<number>(5);
   const [aspectRatio, setAspectRatio] = useState<AspectRatio>("9:16");
   const [quality, setQuality] = useState<Quality>("1080p");
+  const [productId, setProductId] = useState<string | null>(null);
   const [mode, setMode] = useState<Mode>("standard");
   const [variantCount, setVariantCount] = useState(1);
   const [shotMix, setShotMix] = useState<ShotMix>("mixed");
@@ -94,6 +99,7 @@ export function StudioClient({
       format,
       aspectRatio,
       quality,
+      productId: productId ?? undefined,
       sourceImageId: sourceImageId ?? undefined,
     };
     if (scriptMode === "custom") {
@@ -244,6 +250,16 @@ export function StudioClient({
           label="Format"
           hint="UGC = phone-shot. Cinematic = editorial."
         />
+
+        {PRODUCT_FORMATS.has(format) && (
+          <ProductPicker
+            products={products}
+            value={productId}
+            onChange={setProductId}
+            label="Product"
+            hint="Detail shots use the product image; Claude works the product into the script."
+          />
+        )}
 
         <div>
           <div className="text-sm font-medium mb-1.5">Quality</div>

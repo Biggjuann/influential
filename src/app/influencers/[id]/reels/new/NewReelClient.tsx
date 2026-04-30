@@ -4,8 +4,10 @@ import { useRouter } from "next/navigation";
 import { Button } from "@/components/Button";
 import { FormatPicker } from "@/components/FormatPicker";
 import { RenderTargetBar } from "@/components/RenderTargetBar";
+import { ProductPicker, PRODUCT_FORMATS } from "@/components/ProductPicker";
 import type { Format } from "@/lib/formatPresets";
 import type { AspectRatio, Quality } from "@/lib/renderTarget";
+import type { Product } from "@/lib/db/schema";
 
 type Mode = "draft" | "standard" | "premium";
 
@@ -34,10 +36,12 @@ export function NewReelClient({
   influencerId,
   gallery,
   defaultFormat,
+  products,
 }: {
   influencerId: string;
   gallery: { id: string; url: string }[];
   defaultFormat: Format;
+  products: Product[];
 }) {
   const router = useRouter();
   const [title, setTitle] = useState("");
@@ -49,6 +53,7 @@ export function NewReelClient({
   const [quality, setQuality] = useState<Quality>("1080p");
   // Default-length is the canonical scene duration when adding new scenes.
   const [defaultSceneLength, setDefaultSceneLength] = useState<number>(5);
+  const [productId, setProductId] = useState<string | null>(null);
   const [scenes, setScenes] = useState<Scene[]>([
     { visualDirection: "", durationSec: 5, shotType: "subject" },
     { visualDirection: "", durationSec: 5, shotType: "subject" },
@@ -121,6 +126,7 @@ export function NewReelClient({
           format,
           aspectRatio,
           quality,
+          productId: productId ?? undefined,
         }),
       });
       if (!res.ok) throw new Error(await res.text());
@@ -149,6 +155,17 @@ export function NewReelClient({
           label="Format"
           hint="Picks the visual + motion + scene-pattern style for this reel."
         />
+
+        {PRODUCT_FORMATS.has(format) && (
+          <ProductPicker
+            products={products}
+            value={productId}
+            onChange={setProductId}
+            label="Product"
+            hint="Detail shots use the product image; Claude works it into the script."
+          />
+        )}
+
         <div>
           <div className="flex items-baseline justify-between mb-2">
             <span className="text-sm font-medium">Render target</span>

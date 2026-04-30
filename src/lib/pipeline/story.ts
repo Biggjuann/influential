@@ -76,6 +76,20 @@ export async function generateStory(args: {
   const quality: Quality = ((story as { quality?: string }).quality as Quality) ?? "1080p";
   const target = dimensionsFor(aspectRatio, quality);
   const imgAspect = imageGenAspect(aspectRatio);
+
+  // Product reference: when set, the story's detail shots use the product's
+  // canonical image as the keyframe directly (skipping image gen entirely)
+  // and subject shots fall back to the regular face-locked path.
+  const productId = (story as { productId?: string | null }).productId ?? null;
+  const product = productId
+    ? (
+        await db
+          .select()
+          .from(schema.products)
+          .where(eq(schema.products.id, productId))
+          .limit(1)
+      )[0] ?? null
+    : null;
   const totalSteps =
     story.scenes.length /* keyframes */ + story.scenes.length /* animations */ + 4;
   let step = 0;
@@ -106,6 +120,18 @@ export async function generateStory(args: {
         if (!src) throw new Error(`scene ${i + 1}: source image not found`);
         keyframeUrl = toAbsoluteUrl(src.url);
         tick(`scene ${i + 1} (${shotType}): using picked image`);
+      } else if (
+        product &&
+        shotType === "detail" &&
+        product.images &&
+        product.images.length > 0
+      ) {
+        // Product detail shot: animate the actual product image directly,
+        // skipping a fresh keyframe gen. This is the cornerstone of unboxing
+        // / product review / try-on flows — the product needs to look like
+        // the real product, not Flux's interpretation of the prompt.
+        keyframeUrl = toAbsoluteUrl(product.images[0]);
+        tick(`scene ${i + 1} (detail / product): using ${product.name}`);
       } else {
         tick(`scene ${i + 1} (${shotType}/${format}): keyframe`);
         const isSubject = shotType === "subject";

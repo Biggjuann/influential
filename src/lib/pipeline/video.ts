@@ -28,6 +28,7 @@ export async function generateVideo(args: {
   format?: Format;
   aspectRatio?: AspectRatio;
   quality?: Quality;
+  productId?: string;
   // When set, animate this existing asset directly instead of generating a
   // fresh keyframe. Lets users pick a great image they already created
   // (Seedream / Flux Pro / hand-curated) without paying for a re-render.
@@ -54,6 +55,18 @@ export async function generateVideo(args: {
   if (!inf) throw new Error("influencer not found");
   if (!inf.canonicalImageId) throw new Error("influencer has no canonical image — pick one first");
   const format: Format = args.format ?? (inf.persona.defaultFormat as Format) ?? "cinematic";
+
+  // Optional product reference; mentioned in the keyframe prompt so single
+  // videos in product formats actually depict the product.
+  const product = args.productId
+    ? (
+        await db
+          .select()
+          .from(schema.products)
+          .where(eq(schema.products.id, args.productId))
+          .limit(1)
+      )[0] ?? null
+    : null;
 
   const canon = (
     await db.select().from(schema.assets).where(eq(schema.assets.id, inf.canonicalImageId)).limit(1)
@@ -107,9 +120,14 @@ export async function generateVideo(args: {
     keyframeUrl = toAbsoluteUrl(src.url);
   } else {
     args.onProgress?.(12, `rendering keyframe (${mode}/${format})`);
+    // Compose the visualDirection with explicit product mention when set, so
+    // single-clip videos in product formats actually show the product.
+    const direction = product
+      ? `${script.visualDirection}, holding ${product.name}${product.description ? ` (${product.description})` : ""}`
+      : script.visualDirection;
     const keyframe = await provider.generateImage({
       prompt: buildKeyframePrompt({
-        visualDirection: script.visualDirection,
+        visualDirection: direction,
         format,
         shotType: "subject",
         characterPrompt: inf.persona.visualPrompt,

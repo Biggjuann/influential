@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 import { db, schema, ready } from "@/lib/db";
 import { eq, desc } from "drizzle-orm";
 import { InfluencerHeaderCard } from "@/components/InfluencerHeaderCard";
+import { ProductsSection } from "@/components/ProductsSection";
 import { InfluencerClient } from "./InfluencerClient";
 
 export const dynamic = "force-dynamic";
@@ -28,6 +29,11 @@ export default async function InfluencerPage({ params }: { params: Promise<{ id:
     .from(schema.stories)
     .where(eq(schema.stories.influencerId, id))
     .orderBy(desc(schema.stories.createdAt));
+  const products = await db
+    .select()
+    .from(schema.products)
+    .where(eq(schema.products.influencerId, id))
+    .orderBy(desc(schema.products.createdAt));
 
   return (
     <div className="space-y-10">
@@ -45,6 +51,8 @@ export default async function InfluencerPage({ params }: { params: Promise<{ id:
         initialImages={images}
         initialVideos={videos}
       />
+
+      <ProductsSection influencerId={inf.id} initialProducts={products} />
 
       <section>
         <div className="flex items-center justify-between mb-4">

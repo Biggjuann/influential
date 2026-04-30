@@ -135,6 +135,7 @@ export async function generateSequentialBeats(args: {
   shotMix?: "talking" | "mixed" | "travel";
   format?: import("../formatPresets").Format;
   formatBeatPattern?: string;
+  product?: { name: string; description: string | null } | null;
 }) {
   const c = getClient();
   if (!c) return mockBeats(args);
@@ -152,6 +153,13 @@ export async function generateSequentialBeats(args: {
 
   const formatBlock = formatBeatPattern
     ? `\n\nFORMAT: ${format}\n${formatBeatPattern}\nIMPORTANT: visualDirection language must match this format. For UGC formats avoid "cinematic", "35mm", "editorial", "shallow depth of field" — write like an iPhone capture (handheld, vertical, selfie POV, friend filming, mirror selfie, kitchen counter, etc).`
+    : "";
+
+  const productBlock = args.product
+    ? `\n\nPRODUCT (must be referenced by name in the script and shown specifically in detail shots):
+- Name: ${args.product.name}
+${args.product.description ? `- Description: ${args.product.description}` : ""}
+The fullScript MUST mention "${args.product.name}" by name at least once. Detail shots in the visualDirection should describe this exact product (its colors, surfaces, packaging) — not a generic placeholder.`
     : "";
 
   const mixGuidance =
@@ -173,7 +181,7 @@ Each beat has a "shotType":
 - "scenery" — pure environment B-roll: landscapes, architecture, streets, transit, weather. NO person in frame. Lean into the location. Think travel-doc cinematography.
 - "detail" — close-up cutaway: food, hands, an object, a sign, fabric texture, footprints. Hyper-specific, macro framing.
 
-${mixGuidance}${formatBlock}
+${mixGuidance}${formatBlock}${productBlock}
 
 Hard rules:
 - Each visualDirection MUST reference the specific topic elements (location, prop, action, time of day) by name. "approaching the Eiffel Tower's iron base", not "approaching a tower". For scenery/detail shots, double down on environmental specifics — "rusted padlocks on the Pont des Arts railing" beats "a bridge".

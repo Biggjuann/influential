@@ -88,6 +88,17 @@ async function ensureSchema() {
     ALTER TABLE stories ADD COLUMN IF NOT EXISTS format TEXT NOT NULL DEFAULT 'cinematic';
     ALTER TABLE stories ADD COLUMN IF NOT EXISTS aspect_ratio TEXT NOT NULL DEFAULT '9:16';
     ALTER TABLE stories ADD COLUMN IF NOT EXISTS quality TEXT NOT NULL DEFAULT '1080p';
+    ALTER TABLE stories ADD COLUMN IF NOT EXISTS product_id TEXT;
+    CREATE TABLE IF NOT EXISTS products (
+      id TEXT PRIMARY KEY,
+      influencer_id TEXT NOT NULL,
+      name TEXT NOT NULL,
+      description TEXT,
+      external_url TEXT,
+      images JSONB NOT NULL DEFAULT '[]'::jsonb,
+      created_at BIGINT NOT NULL DEFAULT extract(epoch from now())::bigint
+    );
+    CREATE INDEX IF NOT EXISTS idx_products_influencer ON products(influencer_id);
     CREATE INDEX IF NOT EXISTS idx_assets_influencer ON assets(influencer_id);
     CREATE INDEX IF NOT EXISTS idx_jobs_influencer ON jobs(influencer_id);
     CREATE INDEX IF NOT EXISTS idx_stories_influencer ON stories(influencer_id);

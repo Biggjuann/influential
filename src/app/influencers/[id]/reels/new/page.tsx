@@ -22,6 +22,11 @@ export default async function NewReelPage({ params }: { params: Promise<{ id: st
     .where(and(eq(schema.assets.influencerId, id), eq(schema.assets.kind, "image")))
     .orderBy(desc(schema.assets.createdAt))
     .limit(24);
+  const products = await db
+    .select()
+    .from(schema.products)
+    .where(eq(schema.products.influencerId, id))
+    .orderBy(desc(schema.products.createdAt));
 
   return (
     <div className="max-w-4xl mx-auto">
@@ -35,6 +40,7 @@ export default async function NewReelPage({ params }: { params: Promise<{ id: st
         influencerId={inf.id}
         gallery={images.map((i) => ({ id: i.id, url: i.url }))}
         defaultFormat={inf.persona.defaultFormat ?? "cinematic"}
+        products={products}
       />
     </div>
   );

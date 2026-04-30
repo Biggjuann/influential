@@ -24,6 +24,7 @@ const Body = z.object({
     .enum(["ugc", "tutorial", "unboxing", "product_review", "try_on", "travel", "cinematic"])
     .optional(),
   sourceImageId: z.string().optional(),
+  productId: z.string().optional(),
   customScript: z
     .object({
       hook: z.string().optional(),
@@ -60,6 +61,23 @@ export async function POST(req: NextRequest) {
       body.format ?? (inf.persona.defaultFormat as Format | undefined) ?? "cinematic";
     const fmt = getFormat(format);
     const shotMix = body.shotMix ?? fmt.defaultShotMix;
+
+    // If a product is attached, pull its name + description so Claude works
+    // it into the script and visualDirections.
+    let product: { name: string; description: string | null } | null = null;
+    if (body.productId) {
+      const prod = (
+        await db
+          .select()
+          .from(schema.products)
+          .where(eq(schema.products.id, body.productId))
+          .limit(1)
+      )[0];
+      if (prod && prod.influencerId === body.influencerId) {
+        product = { name: prod.name, description: prod.description };
+      }
+    }
+
     const planned = await generateSequentialBeats({
       persona: {
         name: inf.persona.name,
@@ -72,6 +90,7 @@ export async function POST(req: NextRequest) {
       shotMix,
       format,
       formatBeatPattern: fmt.beatPattern,
+      product,
     });
 
     const storyId = nanoid(12);
@@ -90,6 +109,7 @@ export async function POST(req: NextRequest) {
       format,
       aspectRatio: body.aspectRatio,
       quality: body.quality,
+      productId: body.productId ?? null,
       status: "rendering",
     });
 
@@ -124,6 +144,7 @@ export async function POST(req: NextRequest) {
           format: body.format,
           aspectRatio: body.aspectRatio,
           quality: body.quality,
+          productId: body.productId,
           sourceImageId: body.sourceImageId,
           customScript: body.customScript,
           onProgress: update,

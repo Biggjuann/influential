@@ -66,6 +66,7 @@ export const stories = pgTable("stories", {
   format: text("format").notNull().default("cinematic"),
   aspectRatio: text("aspect_ratio").notNull().default("9:16"),
   quality: text("quality").notNull().default("1080p"),
+  productId: text("product_id"),
   status: text("status", { enum: ["queued", "rendering", "done", "error"] }).notNull().default("queued"),
   outputAssetId: text("output_asset_id"),
   error: text("error"),
@@ -115,7 +116,20 @@ export type Persona = {
   defaultFormat?: Format;
 };
 
+export const products = pgTable("products", {
+  id: text("id").primaryKey(),
+  influencerId: text("influencer_id").notNull(),
+  name: text("name").notNull(),
+  description: text("description"),
+  externalUrl: text("external_url"),
+  /** Asset URLs (relative /api/assets/...) for the product images. First
+   * image is used as the canonical product reference. */
+  images: jsonb("images").$type<string[]>().notNull(),
+  createdAt: bigint("created_at", { mode: "number" }).notNull().default(sql`extract(epoch from now())::bigint`),
+});
+
 export type Influencer = typeof influencers.$inferSelect;
 export type Asset = typeof assets.$inferSelect;
 export type Job = typeof jobs.$inferSelect;
 export type Story = typeof stories.$inferSelect;
+export type Product = typeof products.$inferSelect;
