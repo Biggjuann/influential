@@ -21,10 +21,12 @@ import type { StoryScene } from "../db/schema";
 // system ffmpeg + fonts; ffmpeg-static stays as a fallback for environments
 // where the system binary isn't present (e.g. local dev on a fresh laptop).
 const SYSTEM_FFMPEG = "/usr/bin/ffmpeg";
+const SYSTEM_FFPROBE = "/usr/bin/ffprobe";
 const ffmpegBin = existsSync(SYSTEM_FFMPEG)
   ? SYSTEM_FFMPEG
   : ((ffmpegStaticPath as unknown as string | null) ?? "ffmpeg");
 const HAS_LIBASS = ffmpegBin === SYSTEM_FFMPEG;
+const HAS_FFPROBE = existsSync(SYSTEM_FFPROBE);
 
 // Same anchors as the gallery generator — keep behaviour consistent so a
 // scene rendered via the studio looks like one rendered via a story beat.
@@ -163,20 +165,55 @@ export async function generateStory(args: {
     const concatVideoPath = join(tmp, "concat.mp4");
     await concatScenes(sceneVideoPaths, concatVideoPath);
 
+    // 3a. Length match. If the voiceover is longer than the stitched video
+    //     we hold the final frame so the voice never gets cut off mid-word
+    //     (standard editing move). If shorter, the natural -shortest mux is
+    //     the right behaviour — video plays out, audio ends in silence.
+    const sceneTotalSec = story.scenes.reduce((s, x) => s + x.durationSec, 0);
+    let videoForMux = concatVideoPath;
+    let finalDurationSec = sceneTotalSec;
+    if (HAS_FFPROBE) {
+      try {
+        const audioDur = await probeDuration(audioPath);
+        if (audioDur > sceneTotalSec + 0.3) {
+          const padSec = +(audioDur - sceneTotalSec).toFixed(2);
+          const paddedPath = join(tmp, "concat-padded.mp4");
+          await runFfmpeg([
+            "-y",
+            "-i",
+            concatVideoPath,
+            "-vf",
+            `tpad=stop_mode=clone:stop_duration=${padSec}`,
+            "-c:v",
+            "libx264",
+            "-preset",
+            "veryfast",
+            "-crf",
+            "20",
+            "-pix_fmt",
+            "yuv420p",
+            "-an",
+            paddedPath,
+          ]);
+          videoForMux = paddedPath;
+          finalDurationSec = audioDur;
+        }
+      } catch {
+        // probing is best-effort — if it fails we just use the unpadded video
+      }
+    }
+
     // 4. Generate ASS subtitle for caption overlay (libass, broadcast-grade).
-    //    Falls back to skipping captions if we're stuck on ffmpeg-static
-    //    (which lacks libass) — better to ship a clean video than to fail.
+    //    Caption duration matches the FINAL video so the burn-in stays
+    //    on-screen through any padded last-frame hold.
     let assPath: string | undefined;
     if (story.globalCaption.trim()) {
       tick("caption overlay");
       if (HAS_LIBASS) {
-        // Pin the caption to the full duration of the audio track. ffmpeg
-        // -shortest later will trim to the shorter of audio / video.
-        const durationSec = story.scenes.reduce((s, x) => s + x.durationSec, 0);
         const ass = buildAss({
           text: story.globalCaption.trim(),
           style: inf.persona.captionStyle ?? undefined,
-          durationSec,
+          durationSec: finalDurationSec,
         });
         assPath = join(tmp, "caption.ass");
         await writeFile(assPath, ass);
@@ -189,7 +226,7 @@ export async function generateStory(args: {
     tick("final mux");
     const finalPath = join(tmp, "final.mp4");
     await muxAudioAndCaption({
-      videoPath: concatVideoPath,
+      videoPath: videoForMux,
       audioPath,
       assPath,
       outputPath: finalPath,
@@ -363,6 +400,31 @@ function runFfmpeg(args: string[]): Promise<void> {
         ? resolve()
         : reject(new Error(`ffmpeg exited ${code}: ${stderr.split("\n").slice(-5).join(" | ")}`)),
     );
+    p.on("error", reject);
+  });
+}
+
+function probeDuration(path: string): Promise<number> {
+  return new Promise((resolve, reject) => {
+    const p = spawn(SYSTEM_FFPROBE, [
+      "-v",
+      "error",
+      "-show_entries",
+      "format=duration",
+      "-of",
+      "default=noprint_wrappers=1:nokey=1",
+      path,
+    ]);
+    let out = "";
+    let err = "";
+    p.stdout.on("data", (d) => (out += d.toString()));
+    p.stderr.on("data", (d) => (err += d.toString()));
+    p.on("close", (code) => {
+      if (code !== 0) return reject(new Error(`ffprobe exited ${code}: ${err}`));
+      const dur = parseFloat(out.trim());
+      if (!Number.isFinite(dur)) return reject(new Error(`ffprobe non-numeric: ${out}`));
+      resolve(dur);
+    });
     p.on("error", reject);
   });
 }

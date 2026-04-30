@@ -148,11 +148,7 @@ export function NewReelClient({
             placeholder="ok the way the light hits these tiles at six pm is unreal. i used to walk this exact route every evening when i first moved here. there's a quiet kind of luxury in it — no one's trying to impress anyone, the whole city just exhales."
             className="w-full rounded-md border border-border bg-bg px-3 py-2 text-sm focus:border-accent outline-none resize-y"
           />
-          <div className="text-xs text-muted mt-1.5">
-            ≈ {Math.round(fullScript.split(/\s+/).filter(Boolean).length / 2.5)}s spoken at a
-            natural pace. Aim for ≤ total scene length ({totalSeconds}s) — anything longer gets
-            cut off by ffmpeg <span className="font-mono">-shortest</span>.
-          </div>
+          <ScriptTimingBadge fullScript={fullScript} sceneTotalSec={totalSeconds} />
         </Field>
       </div>
 
@@ -341,6 +337,66 @@ export function NewReelClient({
         {busy ? "Starting…" : "Render reel"}
       </Button>
     </form>
+  );
+}
+
+function ScriptTimingBadge({
+  fullScript,
+  sceneTotalSec,
+}: {
+  fullScript: string;
+  sceneTotalSec: number;
+}) {
+  const words = fullScript.split(/\s+/).filter(Boolean).length;
+  if (words === 0) {
+    return (
+      <div className="text-xs text-muted mt-1.5">
+        Aim for the script to play out within the total scene length ({sceneTotalSec}s) — the
+        pipeline will hold the last frame to cover any overrun, but matching feels best.
+      </div>
+    );
+  }
+  const estimatedSec = words / 2.3; // ~2.3 wps natural read pace
+  const diff = estimatedSec - sceneTotalSec;
+  const ratio = sceneTotalSec > 0 ? estimatedSec / sceneTotalSec : 0;
+
+  // Bands: green ≈ within 15%, yellow ≈ within 35%, red beyond.
+  let tone: "ok" | "warn" | "bad";
+  let msg: string;
+  if (sceneTotalSec === 0) {
+    tone = "warn";
+    msg = "Add at least one scene.";
+  } else if (Math.abs(diff) <= sceneTotalSec * 0.15) {
+    tone = "ok";
+    msg = "Script length matches scene total — clean cuts on both ends.";
+  } else if (diff > 0 && ratio <= 1.35) {
+    tone = "warn";
+    msg = `Script is ~${Math.abs(diff).toFixed(1)}s longer than the scenes. The pipeline will hold the last frame to fit, but adding a scene would feel more natural.`;
+  } else if (diff > 0) {
+    tone = "bad";
+    msg = `Script is ~${Math.abs(diff).toFixed(1)}s longer than the scenes — that's a big stretch on the last frame. Add ${Math.ceil(diff / 5)} more scene${Math.ceil(diff / 5) === 1 ? "" : "s"}.`;
+  } else if (-diff <= sceneTotalSec * 0.35) {
+    tone = "warn";
+    msg = `Script is ~${Math.abs(diff).toFixed(1)}s shorter — reel will end with ${Math.abs(diff).toFixed(1)}s of silent video. Trim a scene or expand the script.`;
+  } else {
+    tone = "bad";
+    msg = `Script is ~${Math.abs(diff).toFixed(1)}s shorter than the scenes — long silent tail. Trim ${Math.ceil(-diff / 5)} scene${Math.ceil(-diff / 5) === 1 ? "" : "s"} or expand the script.`;
+  }
+
+  const palette =
+    tone === "ok"
+      ? "border-emerald-500/40 bg-emerald-500/10 text-emerald-300"
+      : tone === "warn"
+        ? "border-amber-500/40 bg-amber-500/10 text-amber-300"
+        : "border-red-500/40 bg-red-500/10 text-red-300";
+
+  return (
+    <div className={`mt-1.5 rounded-md border px-3 py-2 text-xs ${palette}`}>
+      <div className="font-medium tabular-nums">
+        {words} words · ≈ {estimatedSec.toFixed(1)}s spoken vs {sceneTotalSec}s of scenes
+      </div>
+      <div className="opacity-90 mt-0.5">{msg}</div>
+    </div>
   );
 }
 

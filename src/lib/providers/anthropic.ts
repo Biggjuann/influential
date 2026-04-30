@@ -137,7 +137,13 @@ export async function generateSequentialBeats(args: {
   const c = getClient();
   if (!c) return mockBeats(args);
 
-  const wordsPerBeat = Math.round(args.durationSecPerBeat * 2.3);
+  // ~2.3 words/sec is a natural read pace for ElevenLabs Turbo / F5-TTS.
+  // Slightly under because we'd rather a tiny silent tail than the audio
+  // bumping into the end of the video and getting -shortest'd off mid-word.
+  const totalDurationSec = args.beatCount * args.durationSecPerBeat;
+  const targetWords = Math.round(totalDurationSec * 2.2);
+  const minWords = Math.max(8, Math.round(totalDurationSec * 1.8));
+  const maxWords = Math.round(totalDurationSec * 2.4);
   const shotMix = args.shotMix ?? "mixed";
 
   const mixGuidance =
@@ -176,7 +182,9 @@ Output JSON only, no markdown fences.`,
 Voice: ${args.persona.voiceDescription}
 Content pillars: ${args.persona.contentPillars.join(", ")}
 Topic: ${args.topic}
-Each beat is ${args.durationSecPerBeat}s. Voiceover: ~${wordsPerBeat * args.beatCount} words total spread across the beats.
+Each beat is ${args.durationSecPerBeat}s — total reel is ${totalDurationSec}s.
+
+VOICEOVER LENGTH IS A HARD CONSTRAINT. The fullScript must be between ${minWords} and ${maxWords} words (target ${targetWords}). Going over means TTS audio overruns the video and gets cut off mid-word; going under leaves trailing silence. Count words before you finalize.
 
 Return JSON:
 {
