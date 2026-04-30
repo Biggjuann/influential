@@ -17,6 +17,13 @@ import type { StoryScene } from "../db/schema";
 
 const ffmpegBin = (ffmpegPath as unknown as string | null) ?? "ffmpeg";
 
+// Same anchors as the gallery generator — keep behaviour consistent so a
+// scene rendered via the studio looks like one rendered via a story beat.
+const PHOTOREAL_PREFIX =
+  "cinematic photograph, photorealistic, 35mm film, professional editorial photography, sharp focus, natural skin texture, detailed";
+const HARD_NEGATIVE =
+  "cartoon, anime, illustration, 3d render, cgi, plastic skin, deformed face, extra fingers, lowres, watermark, text, stock photo, oversaturated, bad anatomy";
+
 export async function generateStory(args: {
   storyId: string;
   onProgress?: (p: number, step: string) => void;
@@ -80,13 +87,27 @@ export async function generateStory(args: {
       } else {
         if (!canon) throw new Error("scene needs source image OR influencer needs canonical face");
         tick(`scene ${i + 1}: keyframe`);
+        // Scene-first prompt ordering. Image models weight the front of the
+        // prompt heavily, so leading with the visualDirection ensures the
+        // SCENE renders (Eiffel tower, Tokyo street, whatever) instead of
+        // getting crowded out by the locked character description. Photoreal
+        // anchor at the very start, character traits at the end as identity
+        // ballast, hard negative to fight cartoon/illustration drift.
         const kf = await provider.generateImage({
-          prompt: `${inf.persona.visualPrompt}, ${scene.visualDirection}`,
-          negativePrompt: inf.persona.negativePrompt,
+          prompt: [PHOTOREAL_PREFIX, scene.visualDirection, inf.persona.visualPrompt]
+            .filter(Boolean)
+            .join(", "),
+          negativePrompt: inf.persona.negativePrompt
+            ? `${inf.persona.negativePrompt}, ${HARD_NEGATIVE}`
+            : HARD_NEGATIVE,
           aspectRatio: "9:16",
           faceReferenceUrl: toAbsoluteUrl(canon.url),
           count: 1,
           mode,
+          // Story scenes prioritize scene fidelity over pixel-perfect face
+          // matching — the canonical reference still anchors identity
+          // recognizably but doesn't drag every keyframe back to a portrait.
+          idWeightOverride: 0.7,
         });
         keyframeUrl = kf.images[0].url;
       }

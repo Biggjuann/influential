@@ -38,7 +38,7 @@ export async function renderCaptionPng(opts: CaptionOverlayOpts): Promise<Buffer
       const y = yStart + i * lineHeight;
       const safe = escapeXml(line);
       return `<text x="${w / 2}" y="${y}"
-            font-family="Arial, Helvetica, sans-serif"
+            font-family="DejaVu Sans, Arial, Helvetica, sans-serif"
             font-size="${fontSize}"
             font-weight="700"
             text-anchor="middle"

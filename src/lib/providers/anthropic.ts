@@ -141,7 +141,17 @@ export async function generateSequentialBeats(args: {
   const resp = await c.messages.create({
     model: MODEL,
     max_tokens: 1500,
-    system: `You plan a short vertical video as a SEQUENCE of beats — discrete moments that move a tiny narrative forward. The voiceover is ONE continuous take that reads naturally across all beats; the visualDirection per beat is what the camera sees in that moment. Same hard rules as scriptwriting: no AI-influencer cliches, no fake "the part nobody talks about" templates, lean cinematic, specific, real. Output JSON only.`,
+    system: `You plan a short vertical TikTok reel as a SEQUENCE of beats — discrete cinematic moments that move a tiny narrative forward.
+
+CRITICAL: each visualDirection becomes the prompt sent to an image-to-video model. The model can only render what you literally describe. If the topic mentions a place, a brand, a prop, an action — those exact things must appear in EVERY beat's visualDirection where relevant. Generic descriptions like "a person walking in soft light" produce videos with nothing to do with the topic.
+
+Hard rules:
+- Each visualDirection MUST reference the specific topic elements (location, prop, action, time of day) by name. "approaching the Eiffel Tower's iron base", not "approaching a tower".
+- Each visualDirection should be a SHOT description: framing (wide / medium / close), lens (35mm / 85mm / handheld), lighting (golden hour / overcast / neon), micro-action (mid-laugh, hand brushing hair, looking up).
+- The fullScript is ONE continuous spoken take — written like a real person talking, not a marketing template. No "wait you didn't know about", "POV:", "I tried it for X days". Use contractions, micro-pauses, observational specifics.
+- The arc: 3 beats = setup → development → payoff. 5 beats = setup → escalate → midpoint → escalate → resolve.
+
+Output JSON only, no markdown fences.`,
     messages: [
       {
         role: "user",
@@ -151,8 +161,6 @@ Content pillars: ${args.persona.contentPillars.join(", ")}
 Topic: ${args.topic}
 Each beat is ${args.durationSecPerBeat}s. Voiceover: ~${wordsPerBeat * args.beatCount} words total spread across the beats.
 
-Beats should be a tiny narrative arc (setup → development → payoff for 3 beats; for more beats, escalate then resolve). Visual directions must be CINEMATIC and SPECIFIC (framing, lighting, micro-action, lens) — vague prompts produce slop.
-
 Return JSON:
 {
   "title": string (3-6 words, internal),
@@ -160,13 +168,28 @@ Return JSON:
   "fullScript": string (the FULL continuous spoken voiceover joining all beats — naturally written, not chopped),
   "beats": [
     {
-      "visualDirection": string (cinematic shot description for THIS moment),
+      "visualDirection": string (cinematic shot description for THIS moment, MUST reference the topic's specifics by name),
       "spokenChunk": string (which slice of the script lands during this beat — informational, not used for separate TTS)
     }
     // ... beatCount entries
   ],
   "hashtags": string[] (5-8 lowercase, no #)
-}`,
+}
+
+Example for topic "walk to the Eiffel Tower":
+{
+  "title": "eiffel walk",
+  "globalCaption": "first time seeing it up close",
+  "fullScript": "okay so i'm finally doing this. i've been in paris four days and somehow kept putting it off, like it was too obvious or something. but the light is doing this thing right now and. yeah. it's worth it.",
+  "beats": [
+    {"visualDirection":"medium shot, walking down Avenue de la Bourdonnais toward the Eiffel Tower visible in the distance, late afternoon golden hour, slight handheld sway, 35mm shallow DOF, hair catching wind","spokenChunk":"okay so i'm finally doing this..."},
+    {"visualDirection":"low angle wide shot at the base of the Eiffel Tower, iron lattice towering overhead filling the frame, subject looking up with hand shading eyes, soft warm sun raking through the structure","spokenChunk":"i've been in paris four days..."},
+    {"visualDirection":"close-up profile, subject smiling softly with the Eiffel Tower's iron beams visible bokeh'd behind their shoulder, magic-hour rim light, 85mm","spokenChunk":"but the light is doing this thing..."}
+  ],
+  "hashtags": ["paris","eiffeltower","goldenhour","solotravel","slowtravel","parisdiaries"]
+}
+
+Now plan beats for the actual topic above with the same level of specificity.`,
       },
     ],
   });

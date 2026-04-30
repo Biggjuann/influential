@@ -10,6 +10,10 @@ export type ImageGenInput = {
   count?: number;
   mode?: QualityMode;
   engine?: ImageEngine;
+  // Override PuLID id_weight for face-locked generations. Lower (0.6-0.8) =
+  // scene rendering wins over face fidelity. Higher (0.9-1.0) = face is
+  // pixel-locked but scene tokens can get crowded out.
+  idWeightOverride?: number;
 };
 
 export type ImageGenOutput = {

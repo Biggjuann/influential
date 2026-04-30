@@ -40,7 +40,10 @@ const ENDPOINTS = {
     premium: process.env.FAL_ENDPOINT_VIDEO_I2V_PREMIUM ?? "fal-ai/wan-pro/image-to-video",
   },
   ttsClone: process.env.FAL_ENDPOINT_TTS_CLONE ?? "fal-ai/f5-tts",
-  ttsFallback: process.env.FAL_ENDPOINT_TTS_FALLBACK ?? "fal-ai/kokoro/american-english",
+  // ElevenLabs Turbo is the most natural-sounding default available on fal.
+  // Override via FAL_ENDPOINT_TTS_FALLBACK if you want a different model
+  // (fal-ai/playai/tts/v3, fal-ai/kokoro/american-english, etc).
+  ttsFallback: process.env.FAL_ENDPOINT_TTS_FALLBACK ?? "fal-ai/elevenlabs/tts/turbo-v2.5",
   lipsync: process.env.FAL_ENDPOINT_LIPSYNC ?? "fal-ai/latentsync",
 };
 
@@ -183,7 +186,7 @@ async function falImage(input: ImageGenInput): Promise<ImageGenOutput> {
   // plain Flux schnell when no reference is provided OR draft is selected.
   const useFaceLock = mode !== "draft" && !!input.faceReferenceUrl;
   if (useFaceLock) {
-    const idWeight = Number(process.env.FAL_PULID_ID_WEIGHT ?? 0.9);
+    const idWeight = input.idWeightOverride ?? Number(process.env.FAL_PULID_ID_WEIGHT ?? 0.9);
     const data = await call<FluxResult>(ENDPOINTS.fluxId, {
       prompt: input.prompt,
       reference_image_url: input.faceReferenceUrl,
@@ -233,11 +236,24 @@ async function falTts(input: TtsInput): Promise<TtsOutput> {
     });
     return { audioUrl: data.audio_url.url, durationSec: data.duration ?? 0 };
   }
-  const data = await call<{ audio: { url: string; duration?: number } }>(ENDPOINTS.ttsFallback, {
+  // Fallback: route to whichever endpoint is configured. We send the broadest
+  // possible param set since different TTS models on fal use different keys
+  // (text vs prompt, voice id vs preset name) — extra fields are ignored by
+  // each model's pydantic validator. Response shape can also vary.
+  const voice = process.env.FAL_TTS_VOICE ?? "Rachel";
+  const data = await call<{
+    audio?: { url: string; duration?: number };
+    audio_url?: string | { url: string };
+  }>(ENDPOINTS.ttsFallback, {
+    text: input.text,
     prompt: input.text,
-    voice: "af_bella",
+    voice,
   });
-  return { audioUrl: data.audio.url, durationSec: data.audio.duration ?? 0 };
+  const url =
+    data.audio?.url ??
+    (typeof data.audio_url === "string" ? data.audio_url : data.audio_url?.url);
+  if (!url) throw new Error(`tts response missing audio url: ${JSON.stringify(data).slice(0, 200)}`);
+  return { audioUrl: url, durationSec: data.audio?.duration ?? 0 };
 }
 
 async function falLipsync(input: LipsyncInput): Promise<LipsyncOutput> {
