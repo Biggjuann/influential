@@ -6,13 +6,15 @@ export type ImageGenInput = {
   negativePrompt?: string;
   aspectRatio?: "9:16" | "1:1" | "16:9";
   faceReferenceUrl?: string;
+  /** Optional second reference image — typically a product photo. When set
+   * alongside faceReferenceUrl, the provider routes through a multi-image
+   * conditioning model (Flux Kontext) so the influencer can be shown
+   * holding/using the actual uploaded product, not a model hallucination. */
+  productReferenceUrl?: string;
   seed?: number;
   count?: number;
   mode?: QualityMode;
   engine?: ImageEngine;
-  // Override PuLID id_weight for face-locked generations. Lower (0.6-0.8) =
-  // scene rendering wins over face fidelity. Higher (0.9-1.0) = face is
-  // pixel-locked but scene tokens can get crowded out.
   idWeightOverride?: number;
 };
 

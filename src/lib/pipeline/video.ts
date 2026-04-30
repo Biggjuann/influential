@@ -120,17 +120,16 @@ export async function generateVideo(args: {
     keyframeUrl = toAbsoluteUrl(src.url);
   } else {
     args.onProgress?.(12, `rendering keyframe (${mode}/${format})`);
-    // Compose the visualDirection with explicit product mention when set, so
-    // single-clip videos in product formats actually show the product.
-    const direction = product
-      ? `${script.visualDirection}, holding ${product.name}${product.description ? ` (${product.description})` : ""}`
-      : script.visualDirection;
     const keyframe = await provider.generateImage({
       prompt: buildKeyframePrompt({
-        visualDirection: direction,
+        visualDirection: script.visualDirection,
         format,
         shotType: "subject",
         characterPrompt: inf.persona.visualPrompt,
+        withProduct:
+          product && product.images?.[0]
+            ? { name: product.name, description: product.description }
+            : undefined,
       }),
       negativePrompt: buildKeyframeNegative({
         format,
@@ -139,6 +138,11 @@ export async function generateVideo(args: {
       }),
       aspectRatio: imageGenAspect(aspectRatio),
       faceReferenceUrl: toAbsoluteUrl(canon.url),
+      // Multi-image conditioning when a product is attached — the keyframe
+      // shows the influencer with the ACTUAL uploaded product, not Flux's
+      // hallucination of one.
+      productReferenceUrl:
+        product && product.images?.[0] ? toAbsoluteUrl(product.images[0]) : undefined,
       count: 1,
       mode,
       idWeightOverride: 0.7,

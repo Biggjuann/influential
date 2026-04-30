@@ -138,12 +138,18 @@ export async function generateStory(args: {
         if (isSubject && !canon) {
           throw new Error("subject scene needs influencer canonical face — pick one first");
         }
+        const useMultiRef =
+          isSubject && product && product.images && product.images.length > 0;
         const kf = await provider.generateImage({
           prompt: buildKeyframePrompt({
             visualDirection: scene.visualDirection,
             format,
             shotType,
             characterPrompt: isSubject ? inf.persona.visualPrompt : undefined,
+            withProduct:
+              useMultiRef && product
+                ? { name: product.name, description: product.description }
+                : undefined,
           }),
           negativePrompt: buildKeyframeNegative({
             format,
@@ -152,6 +158,14 @@ export async function generateStory(args: {
           }),
           aspectRatio: imgAspect,
           faceReferenceUrl: isSubject && canon ? toAbsoluteUrl(canon.url) : undefined,
+          // When a product is attached AND this is a subject shot, also pass
+          // the product image so the multi-ref model puts the influencer
+          // with the ACTUAL uploaded product in frame (vs Flux hallucinating
+          // a generic version of "tennis racket" from the prompt text).
+          productReferenceUrl:
+            isSubject && product && product.images?.[0]
+              ? toAbsoluteUrl(product.images[0])
+              : undefined,
           count: 1,
           mode,
           idWeightOverride: isSubject ? 0.7 : undefined,

@@ -11,9 +11,18 @@ export function buildKeyframePrompt(args: {
   format: Format;
   shotType: ShotType;
   characterPrompt?: string;
+  /** When set, the multi-ref model also gets a directive telling it how to
+   * combine the two reference images (subject from #1, product from #2). */
+  withProduct?: { name: string; description?: string | null };
 }): string {
   const f = getFormat(args.format);
-  const parts = [f.prefix, args.visualDirection];
+  const parts = [f.prefix];
+  if (args.withProduct) {
+    parts.push(
+      `the person from the first reference image holding ${args.withProduct.name}${args.withProduct.description ? ` (${args.withProduct.description})` : ""} from the second reference image, product clearly visible and accurate to reference`,
+    );
+  }
+  parts.push(args.visualDirection);
   if (args.shotType === "subject" && args.characterPrompt) parts.push(args.characterPrompt);
   return parts.filter(Boolean).join(", ");
 }
