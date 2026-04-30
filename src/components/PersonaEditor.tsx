@@ -634,12 +634,20 @@ function CaptionPreview({ text, style }: { text: string; style: CaptionStyleConf
         : "items-start";
 
   const display = style.uppercase ? text.toUpperCase() : text;
-  const stroke = style.strokeWidth ?? 0;
-  const sw = stroke;
+  const sw = style.strokeWidth ?? 0;
   const sc = style.strokeColor ?? "#000";
+  // 8-direction stroke approximation. Chunky 4-corner shadows produce a
+  // visible "cross" artifact at higher widths; 8 directions reads smoother
+  // and is closer to what libass renders server-side.
   const textShadow =
     sw > 0
-      ? `${[`-${sw}px -${sw}px 0 ${sc}`, `${sw}px -${sw}px 0 ${sc}`, `-${sw}px ${sw}px 0 ${sc}`, `${sw}px ${sw}px 0 ${sc}`].join(", ")}`
+      ? [
+          [-sw, -sw], [0, -sw], [sw, -sw],
+          [-sw, 0],              [sw, 0],
+          [-sw, sw], [0, sw],   [sw, sw],
+        ]
+          .map(([x, y]) => `${x}px ${y}px 0 ${sc}`)
+          .join(", ")
       : "none";
 
   return (
