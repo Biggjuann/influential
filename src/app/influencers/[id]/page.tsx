@@ -25,6 +25,11 @@ export default async function InfluencerPage({ params }: { params: Promise<{ id:
 
   const images = allAssets.filter((a) => a.kind === "image");
   const videos = allAssets.filter((a) => a.kind === "video");
+  const reels = await db
+    .select()
+    .from(schema.stories)
+    .where(eq(schema.stories.influencerId, id))
+    .orderBy(desc(schema.stories.createdAt));
 
   return (
     <div className="space-y-10">
@@ -49,6 +54,9 @@ export default async function InfluencerPage({ params }: { params: Promise<{ id:
             initialNiche={inf.niche}
             initialPersona={inf.persona}
           />
+          <Link href={`/influencers/${inf.id}/reels/new`}>
+            <Button variant="secondary">🎞 New reel</Button>
+          </Link>
           <Link href={`/influencers/${inf.id}/studio`}>
             <Button>🎬 New video</Button>
           </Link>
@@ -61,6 +69,36 @@ export default async function InfluencerPage({ params }: { params: Promise<{ id:
         initialImages={images}
         initialVideos={videos}
       />
+
+      <section>
+        <div className="flex items-center justify-between mb-4">
+          <h2 className="text-xl font-semibold">Reels</h2>
+          <Link href={`/influencers/${inf.id}/reels/new`} className="text-sm text-accent hover:opacity-80">
+            + new reel
+          </Link>
+        </div>
+        {reels.length === 0 ? (
+          <div className="rounded-xl border border-dashed border-border p-8 text-center text-muted text-sm">
+            No reels yet. A reel stitches multiple scenes with continuous voiceover and a
+            persistent caption.
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+            {reels.map((r) => (
+              <Link
+                key={r.id}
+                href={`/influencers/${inf.id}/reels/${r.id}`}
+                className="rounded-xl border border-border bg-panel p-4 hover:border-accent/60 transition-colors"
+              >
+                <div className="text-sm font-medium truncate">{r.title}</div>
+                <div className="text-xs text-muted mt-1">
+                  {r.scenes.length} scenes · {r.scenes.reduce((s, x) => s + x.durationSec, 0)}s · {r.status}
+                </div>
+              </Link>
+            ))}
+          </div>
+        )}
+      </section>
 
       <details className="rounded-xl border border-border bg-panel p-5">
         <summary className="cursor-pointer text-sm text-muted">Persona JSON</summary>

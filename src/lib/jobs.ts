@@ -3,7 +3,7 @@ import { db, schema, ready } from "./db";
 import { eq } from "drizzle-orm";
 import { nanoid } from "nanoid";
 
-type JobKind = "persona" | "images" | "video";
+type JobKind = "persona" | "images" | "video" | "story";
 
 export async function createJob(
   kind: JobKind,

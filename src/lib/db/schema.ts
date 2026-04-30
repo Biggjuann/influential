@@ -24,7 +24,7 @@ export const assets = pgTable("assets", {
 export const jobs = pgTable("jobs", {
   id: text("id").primaryKey(),
   influencerId: text("influencer_id"),
-  kind: text("kind", { enum: ["persona", "images", "video"] }).notNull(),
+  kind: text("kind", { enum: ["persona", "images", "video", "story"] }).notNull(),
   status: text("status", { enum: ["queued", "running", "done", "error"] }).notNull(),
   progress: integer("progress").notNull().default(0),
   step: text("step"),
@@ -33,6 +33,26 @@ export const jobs = pgTable("jobs", {
   error: text("error"),
   createdAt: bigint("created_at", { mode: "number" }).notNull().default(sql`extract(epoch from now())::bigint`),
   updatedAt: bigint("updated_at", { mode: "number" }).notNull().default(sql`extract(epoch from now())::bigint`),
+});
+
+export type StoryScene = {
+  visualDirection: string;
+  durationSec: 5 | 8;
+  sourceImageId?: string;
+};
+
+export const stories = pgTable("stories", {
+  id: text("id").primaryKey(),
+  influencerId: text("influencer_id").notNull(),
+  title: text("title").notNull(),
+  globalCaption: text("global_caption").notNull().default(""),
+  fullScript: text("full_script").notNull(),
+  scenes: jsonb("scenes").$type<StoryScene[]>().notNull(),
+  mode: text("mode", { enum: ["draft", "standard", "premium"] }).notNull().default("standard"),
+  status: text("status", { enum: ["queued", "rendering", "done", "error"] }).notNull().default("queued"),
+  outputAssetId: text("output_asset_id"),
+  error: text("error"),
+  createdAt: bigint("created_at", { mode: "number" }).notNull().default(sql`extract(epoch from now())::bigint`),
 });
 
 export type Persona = {
@@ -53,3 +73,4 @@ export type Persona = {
 export type Influencer = typeof influencers.$inferSelect;
 export type Asset = typeof assets.$inferSelect;
 export type Job = typeof jobs.$inferSelect;
+export type Story = typeof stories.$inferSelect;

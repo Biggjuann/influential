@@ -68,8 +68,22 @@ async function ensureSchema() {
       created_at BIGINT NOT NULL DEFAULT extract(epoch from now())::bigint,
       updated_at BIGINT NOT NULL DEFAULT extract(epoch from now())::bigint
     );
+    CREATE TABLE IF NOT EXISTS stories (
+      id TEXT PRIMARY KEY,
+      influencer_id TEXT NOT NULL,
+      title TEXT NOT NULL,
+      global_caption TEXT NOT NULL DEFAULT '',
+      full_script TEXT NOT NULL,
+      scenes JSONB NOT NULL,
+      mode TEXT NOT NULL DEFAULT 'standard',
+      status TEXT NOT NULL DEFAULT 'queued',
+      output_asset_id TEXT,
+      error TEXT,
+      created_at BIGINT NOT NULL DEFAULT extract(epoch from now())::bigint
+    );
     CREATE INDEX IF NOT EXISTS idx_assets_influencer ON assets(influencer_id);
     CREATE INDEX IF NOT EXISTS idx_jobs_influencer ON jobs(influencer_id);
+    CREATE INDEX IF NOT EXISTS idx_stories_influencer ON stories(influencer_id);
   `);
 
   // Sweep stale jobs: anything in 'running' or 'queued' from before this
