@@ -123,6 +123,75 @@ function parseJsonStrict(text: string) {
   return JSON.parse(text.slice(start, end + 1));
 }
 
+// Plans a sequential N-beat reel from a single topic. Each beat advances the
+// micro-narrative (e.g. walking → buying → biting) and the spoken lines join
+// into ONE continuous voiceover, so the final stitched reel reads as one
+// moment unfolding rather than three takes of the same thing.
+export async function generateSequentialBeats(args: {
+  persona: { name: string; voiceDescription: string; contentPillars: string[] };
+  topic: string;
+  beatCount: number;
+  durationSecPerBeat: number;
+}) {
+  const c = getClient();
+  if (!c) return mockBeats(args);
+
+  const wordsPerBeat = Math.round(args.durationSecPerBeat * 2.3);
+
+  const resp = await c.messages.create({
+    model: MODEL,
+    max_tokens: 1500,
+    system: `You plan a short vertical video as a SEQUENCE of beats — discrete moments that move a tiny narrative forward. The voiceover is ONE continuous take that reads naturally across all beats; the visualDirection per beat is what the camera sees in that moment. Same hard rules as scriptwriting: no AI-influencer cliches, no fake "the part nobody talks about" templates, lean cinematic, specific, real. Output JSON only.`,
+    messages: [
+      {
+        role: "user",
+        content: `Plan ${args.beatCount} sequential beats for ${args.persona.name}.
+Voice: ${args.persona.voiceDescription}
+Content pillars: ${args.persona.contentPillars.join(", ")}
+Topic: ${args.topic}
+Each beat is ${args.durationSecPerBeat}s. Voiceover: ~${wordsPerBeat * args.beatCount} words total spread across the beats.
+
+Beats should be a tiny narrative arc (setup → development → payoff for 3 beats; for more beats, escalate then resolve). Visual directions must be CINEMATIC and SPECIFIC (framing, lighting, micro-action, lens) — vague prompts produce slop.
+
+Return JSON:
+{
+  "title": string (3-6 words, internal),
+  "globalCaption": string (≤ 50 chars, lowercase preferred — burned across the whole reel),
+  "fullScript": string (the FULL continuous spoken voiceover joining all beats — naturally written, not chopped),
+  "beats": [
+    {
+      "visualDirection": string (cinematic shot description for THIS moment),
+      "spokenChunk": string (which slice of the script lands during this beat — informational, not used for separate TTS)
+    }
+    // ... beatCount entries
+  ],
+  "hashtags": string[] (5-8 lowercase, no #)
+}`,
+      },
+    ],
+  });
+
+  const text = resp.content
+    .filter((b): b is Anthropic.TextBlock => b.type === "text")
+    .map((b) => b.text)
+    .join("");
+  return parseJsonStrict(text) as ReturnType<typeof mockBeats>;
+}
+
+function mockBeats(args: { topic: string; beatCount: number; durationSecPerBeat: number }) {
+  const beats = Array.from({ length: args.beatCount }, (_, i) => ({
+    visualDirection: `beat ${i + 1} of ${args.beatCount} for ${args.topic}, cinematic, specific framing, soft natural light`,
+    spokenChunk: `chunk ${i + 1}`,
+  }));
+  return {
+    title: `${args.topic} (${args.beatCount} beats)`,
+    globalCaption: `${args.topic.slice(0, 40)}`,
+    fullScript: `Here's a continuous narration about ${args.topic} that flows naturally across all ${args.beatCount} beats — picking up small details as the camera moves through the moment.`,
+    beats,
+    hashtags: ["fyp", "foryou", args.topic.replace(/\s+/g, "").toLowerCase()],
+  };
+}
+
 function mockPersona(brief: { niche: string; vibe?: string; gender?: string }) {
   return {
     name: "Aria Vale",

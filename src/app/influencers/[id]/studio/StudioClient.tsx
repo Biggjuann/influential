@@ -14,6 +14,9 @@ type VideoOutput = {
   mode?: Mode;
   skipped?: string[];
   variants?: { assetId: string; url: string }[];
+  // Story / reel output (multi-beat stitched single video)
+  sceneCount?: number;
+  storyId?: string;
 };
 
 const MODE_INFO: Record<Mode, { label: string; perClip: number; desc: string }> = {
@@ -88,8 +91,8 @@ export function StudioClient({
       headers: { "content-type": "application/json" },
       body: JSON.stringify(body),
     });
-    const { jobId } = (await res.json()) as { jobId: string };
-    setJobId(jobId);
+    const data = (await res.json()) as { jobId: string; storyId?: string; kind?: "video" | "reel" };
+    setJobId(data.jobId);
   }
 
   return (
@@ -100,7 +103,10 @@ export function StudioClient({
           {(["auto", "custom"] as ScriptMode[]).map((m) => (
             <button
               key={m}
-              onClick={() => setScriptMode(m)}
+              onClick={() => {
+                setScriptMode(m);
+                if (m === "custom") setVariantCount(1);
+              }}
               className={`px-3 py-1.5 text-sm rounded-md transition-colors ${
                 scriptMode === m ? "bg-panel text-text" : "text-muted hover:text-text"
               }`}
@@ -252,21 +258,35 @@ export function StudioClient({
             </div>
           </div>
           <div>
-            <div className="text-sm font-medium mb-1.5">Variants</div>
+            <div className="text-sm font-medium mb-1.5">
+              Beats
+              <span className="ml-2 text-xs text-muted font-normal">
+                (≥2 = sequential reel, auto-stitched)
+              </span>
+            </div>
             <div className="flex items-center gap-2">
-              {[1, 3, 5].map((n) => (
-                <button
-                  key={n}
-                  onClick={() => setVariantCount(n)}
-                  className={`h-9 px-3 text-sm rounded-md border transition-colors ${
-                    variantCount === n
-                      ? "border-accent bg-accent/15"
-                      : "border-border hover:bg-border/40"
-                  }`}
-                >
-                  ×{n}
-                </button>
-              ))}
+              {[1, 3, 5].map((n) => {
+                const disabled = scriptMode === "custom" && n > 1;
+                return (
+                  <button
+                    key={n}
+                    onClick={() => setVariantCount(n)}
+                    disabled={disabled}
+                    title={
+                      disabled
+                        ? "Multi-beat needs auto mode (Claude plans the sequence). For custom multi-scene, use the Reels feature."
+                        : undefined
+                    }
+                    className={`h-9 px-3 text-sm rounded-md border transition-colors disabled:opacity-30 disabled:cursor-not-allowed ${
+                      variantCount === n
+                        ? "border-accent bg-accent/15"
+                        : "border-border hover:bg-border/40"
+                    }`}
+                  >
+                    ×{n}
+                  </button>
+                );
+              })}
             </div>
           </div>
           <div className="ml-auto text-right">
@@ -304,54 +324,51 @@ export function StudioClient({
 
       {output && (
         <div className="rounded-xl border border-border bg-panel overflow-hidden">
-          {output.variants && output.variants.length > 1 ? (
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2 p-2 bg-black">
-              {output.variants.map((v, i) => (
-                <div key={v.assetId} className="relative">
-                  <video src={v.url} controls className="aspect-[9/16] w-full bg-black rounded" />
-                  <div className="absolute top-2 left-2 text-xs bg-black/70 px-2 py-0.5 rounded">
-                    v{i + 1}
-                  </div>
-                  <a
-                    href={v.url}
-                    download
-                    className="absolute top-2 right-2 text-xs bg-black/70 px-2 py-0.5 rounded hover:bg-accent"
-                  >
-                    ⬇
-                  </a>
-                </div>
-              ))}
+          <video src={output.url} controls autoPlay className="aspect-[9/16] w-full bg-black" />
+          {output.sceneCount && output.sceneCount > 1 && (
+            <div className="bg-accent/10 border-b border-accent/30 px-4 py-2 text-xs flex items-center justify-between">
+              <span>
+                Stitched reel · {output.sceneCount} beats · saved as a Reel for further edits
+              </span>
+              {output.storyId && (
+                <a
+                  href={`/influencers/${influencerId}/reels/${output.storyId}`}
+                  className="text-accent hover:underline"
+                >
+                  open reel →
+                </a>
+              )}
             </div>
-          ) : (
-            <video src={output.url} controls autoPlay className="aspect-[9/16] w-full bg-black" />
           )}
 
           <div className="p-5 space-y-3 text-sm">
-            {output.script.spokenLine && (
+            {output.script?.spokenLine && (
               <div>
                 <div className="text-muted text-xs">Spoken line</div>
                 <div>{output.script.spokenLine}</div>
               </div>
             )}
-            <div>
-              <div className="text-muted text-xs">Caption</div>
-              <div>{output.script.captionText}</div>
-            </div>
-            <div className="flex flex-wrap gap-1.5">
-              {output.script.hashtags.map((h) => (
-                <span key={h} className="text-xs text-accent">
-                  #{h}
-                </span>
-              ))}
-            </div>
+            {output.script?.captionText && (
+              <div>
+                <div className="text-muted text-xs">Caption</div>
+                <div>{output.script.captionText}</div>
+              </div>
+            )}
+            {output.script?.hashtags && output.script.hashtags.length > 0 && (
+              <div className="flex flex-wrap gap-1.5">
+                {output.script.hashtags.map((h) => (
+                  <span key={h} className="text-xs text-accent">
+                    #{h}
+                  </span>
+                ))}
+              </div>
+            )}
             {output.skipped && output.skipped.length > 0 && (
               <div className="text-xs text-muted">Skipped: {output.skipped.join(", ")}</div>
             )}
-            {!output.variants || output.variants.length === 1 ? (
-              <a href={output.url} download className="inline-block">
-                <Button variant="secondary" size="sm">⬇ Download MP4</Button>
-              </a>
-            ) : null}
+            <a href={output.url} download className="inline-block">
+              <Button variant="secondary" size="sm">⬇ Download MP4</Button>
+            </a>
           </div>
         </div>
       )}
