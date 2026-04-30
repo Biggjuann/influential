@@ -5,10 +5,19 @@ import { Button } from "@/components/Button";
 
 type Mode = "draft" | "standard" | "premium";
 
+type ShotType = "subject" | "scenery" | "detail";
+
 type Scene = {
   visualDirection: string;
   durationSec: 5 | 8;
   sourceImageId?: string;
+  shotType: ShotType;
+};
+
+const SHOT_INFO: Record<ShotType, { label: string; hint: string }> = {
+  subject: { label: "Subject", hint: "the influencer on camera" },
+  scenery: { label: "Scenery", hint: "B-roll, no person" },
+  detail: { label: "Detail", hint: "macro / cutaway" },
 };
 
 const MODE_INFO: Record<Mode, { label: string; perScene: number }> = {
@@ -30,8 +39,8 @@ export function NewReelClient({
   const [fullScript, setFullScript] = useState("");
   const [mode, setMode] = useState<Mode>("standard");
   const [scenes, setScenes] = useState<Scene[]>([
-    { visualDirection: "", durationSec: 5 },
-    { visualDirection: "", durationSec: 5 },
+    { visualDirection: "", durationSec: 5, shotType: "subject" },
+    { visualDirection: "", durationSec: 5, shotType: "subject" },
   ]);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
@@ -47,7 +56,20 @@ export function NewReelClient({
   }
   function addScene() {
     if (scenes.length >= 10) return;
-    setScenes([...scenes, { visualDirection: "", durationSec: 5 }]);
+    setScenes([...scenes, { visualDirection: "", durationSec: 5, shotType: "subject" }]);
+  }
+
+  function applyTravelMix() {
+    // Open + close on subject, fill the middle with scenery/detail.
+    setScenes(
+      scenes.map((s, i) => {
+        if (i === 0 || i === scenes.length - 1) return { ...s, shotType: "subject" };
+        return { ...s, shotType: i % 2 === 0 ? "scenery" : "detail" };
+      }),
+    );
+  }
+  function applyAllSubject() {
+    setScenes(scenes.map((s) => ({ ...s, shotType: "subject" })));
   }
   function removeScene(i: number) {
     if (scenes.length <= 1) return;
@@ -135,11 +157,33 @@ export function NewReelClient({
       </div>
 
       <div className="space-y-3">
-        <div className="flex items-center justify-between">
+        <div className="flex items-center justify-between flex-wrap gap-2">
           <h2 className="text-lg font-semibold">Scenes</h2>
-          <Button type="button" variant="secondary" size="sm" onClick={addScene} disabled={scenes.length >= 10}>
-            + Add scene
-          </Button>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={applyTravelMix}
+              className="text-xs px-3 h-8 rounded-md border border-border hover:bg-border/40"
+              title="Open + close on subject, scenery/detail in the middle"
+            >
+              Travel preset
+            </button>
+            <button
+              type="button"
+              onClick={applyAllSubject}
+              className="text-xs px-3 h-8 rounded-md border border-border hover:bg-border/40"
+              title="Every scene is the influencer on camera"
+            >
+              All subject
+            </button>
+            <Button type="button" variant="secondary" size="sm" onClick={addScene} disabled={scenes.length >= 10}>
+              + Add scene
+            </Button>
+          </div>
+        </div>
+        <div className="text-xs text-muted">
+          Travel-creator content is roughly 30% subject (the influencer on camera) and 70% scenery
+          + detail B-roll. Scenery scenes skip face-lock so landscapes actually render.
         </div>
 
         {scenes.map((scene, i) => (
@@ -182,25 +226,45 @@ export function NewReelClient({
               className="w-full rounded-md border border-border bg-bg px-3 py-2 text-sm focus:border-accent outline-none resize-none"
             />
 
-            <div className="flex items-center gap-3">
-              <span className="text-xs text-muted">Duration</span>
-              {[5, 8].map((d) => (
-                <button
-                  type="button"
-                  key={d}
-                  onClick={() => setScene(i, { durationSec: d as 5 | 8 })}
-                  className={`h-7 px-3 text-xs rounded-md border transition-colors ${
-                    scene.durationSec === d
-                      ? "border-accent bg-accent/15"
-                      : "border-border hover:bg-border/40"
-                  }`}
-                >
-                  {d}s
-                </button>
-              ))}
+            <div className="flex items-center gap-3 flex-wrap">
+              <div className="flex items-center gap-2">
+                <span className="text-xs text-muted">Shot</span>
+                {(Object.keys(SHOT_INFO) as ShotType[]).map((t) => (
+                  <button
+                    type="button"
+                    key={t}
+                    onClick={() => setScene(i, { shotType: t })}
+                    title={SHOT_INFO[t].hint}
+                    className={`h-7 px-3 text-xs rounded-md border transition-colors ${
+                      scene.shotType === t
+                        ? "border-accent bg-accent/15"
+                        : "border-border hover:bg-border/40"
+                    }`}
+                  >
+                    {SHOT_INFO[t].label}
+                  </button>
+                ))}
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="text-xs text-muted">Duration</span>
+                {[5, 8].map((d) => (
+                  <button
+                    type="button"
+                    key={d}
+                    onClick={() => setScene(i, { durationSec: d as 5 | 8 })}
+                    className={`h-7 px-3 text-xs rounded-md border transition-colors ${
+                      scene.durationSec === d
+                        ? "border-accent bg-accent/15"
+                        : "border-border hover:bg-border/40"
+                    }`}
+                  >
+                    {d}s
+                  </button>
+                ))}
+              </div>
             </div>
 
-            {gallery.length > 0 && (
+            {gallery.length > 0 && scene.shotType === "subject" && (
               <div>
                 <div className="text-xs text-muted mb-1.5">
                   Source image (optional — auto-generates a keyframe if not picked)

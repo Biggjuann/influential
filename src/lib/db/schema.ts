@@ -35,10 +35,14 @@ export const jobs = pgTable("jobs", {
   updatedAt: bigint("updated_at", { mode: "number" }).notNull().default(sql`extract(epoch from now())::bigint`),
 });
 
+export type ShotType = "subject" | "scenery" | "detail";
+export type ShotMix = "talking" | "mixed" | "travel";
+
 export type StoryScene = {
   visualDirection: string;
   durationSec: 5 | 8;
   sourceImageId?: string;
+  shotType?: ShotType;
 };
 
 export const stories = pgTable("stories", {

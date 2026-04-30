@@ -6,6 +6,13 @@ import { JobProgress } from "@/components/JobProgress";
 
 type Mode = "draft" | "standard" | "premium";
 type ScriptMode = "auto" | "custom";
+type ShotMix = "talking" | "mixed" | "travel";
+
+const SHOT_MIX_INFO: Record<ShotMix, { label: string; desc: string }> = {
+  talking: { label: "Talking head", desc: "Every beat is the influencer on camera" },
+  mixed: { label: "Mixed", desc: "Roughly 50/50 subject + B-roll" },
+  travel: { label: "Travel B-roll", desc: "~30% subject + 70% scenery & detail" },
+};
 
 type VideoOutput = {
   assetId: string;
@@ -39,6 +46,7 @@ export function StudioClient({
   const [duration, setDuration] = useState<5 | 8>(5);
   const [mode, setMode] = useState<Mode>("standard");
   const [variantCount, setVariantCount] = useState(1);
+  const [shotMix, setShotMix] = useState<ShotMix>("mixed");
   const [scriptMode, setScriptMode] = useState<ScriptMode>("auto");
   const [sourceImageId, setSourceImageId] = useState<string | null>(null);
   const [custom, setCustom] = useState({
@@ -73,6 +81,7 @@ export function StudioClient({
       durationSec: duration,
       mode,
       variantCount,
+      shotMix,
       sourceImageId: sourceImageId ?? undefined,
     };
     if (scriptMode === "custom") {
@@ -289,6 +298,28 @@ export function StudioClient({
               })}
             </div>
           </div>
+          {variantCount > 1 && scriptMode === "auto" && (
+            <div>
+              <div className="text-sm font-medium mb-1.5">Shot mix</div>
+              <div className="flex items-center gap-2 flex-wrap">
+                {(Object.keys(SHOT_MIX_INFO) as ShotMix[]).map((m) => (
+                  <button
+                    key={m}
+                    onClick={() => setShotMix(m)}
+                    title={SHOT_MIX_INFO[m].desc}
+                    className={`h-9 px-3 text-sm rounded-md border transition-colors ${
+                      shotMix === m
+                        ? "border-accent bg-accent/15"
+                        : "border-border hover:bg-border/40"
+                    }`}
+                  >
+                    {SHOT_MIX_INFO[m].label}
+                  </button>
+                ))}
+              </div>
+              <div className="text-xs text-muted mt-1.5">{SHOT_MIX_INFO[shotMix].desc}</div>
+            </div>
+          )}
           <div className="ml-auto text-right">
             <div className="text-xs text-muted">Estimated cost</div>
             <div className="text-lg font-medium tabular-nums">~${estCost.toFixed(2)}</div>

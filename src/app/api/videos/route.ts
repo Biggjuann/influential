@@ -14,6 +14,7 @@ const Body = z.object({
   durationSec: z.union([z.literal(5), z.literal(8)]).default(5),
   mode: z.enum(["draft", "standard", "premium"]).default("standard"),
   variantCount: z.number().int().min(1).max(5).default(1),
+  shotMix: z.enum(["talking", "mixed", "travel"]).default("mixed"),
   sourceImageId: z.string().optional(),
   customScript: z
     .object({
@@ -56,6 +57,7 @@ export async function POST(req: NextRequest) {
       topic: body.topic,
       beatCount: body.variantCount,
       durationSecPerBeat: body.durationSec,
+      shotMix: body.shotMix,
     });
 
     const storyId = nanoid(12);
@@ -68,6 +70,7 @@ export async function POST(req: NextRequest) {
       scenes: planned.beats.map((b) => ({
         visualDirection: b.visualDirection,
         durationSec: body.durationSec,
+        shotType: (b as { shotType?: "subject" | "scenery" | "detail" }).shotType ?? "subject",
       })),
       mode: body.mode,
       status: "rendering",

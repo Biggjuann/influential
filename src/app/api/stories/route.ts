@@ -17,6 +17,7 @@ const Body = z.object({
         visualDirection: z.string().min(1),
         durationSec: z.union([z.literal(5), z.literal(8)]).default(5),
         sourceImageId: z.string().optional(),
+        shotType: z.enum(["subject", "scenery", "detail"]).default("subject"),
       }),
     )
     .min(1)

@@ -32,6 +32,11 @@ const PHOTOREAL_PREFIX =
   "cinematic photograph, photorealistic, 35mm film, professional editorial photography, sharp focus, natural skin texture, detailed";
 const HARD_NEGATIVE =
   "cartoon, anime, illustration, 3d render, cgi, plastic skin, deformed face, extra fingers, lowres, watermark, text, stock photo, oversaturated, bad anatomy";
+// Pushes the model away from rendering people in scenery / detail shots.
+// Travel content is mostly B-roll, so most scenes shouldn't have the
+// influencer (or any human) in frame.
+const NO_PEOPLE_NEGATIVE =
+  "people, person, human, model, portrait, face, character, crowd";
 
 export async function generateStory(args: {
   storyId: string;
@@ -81,6 +86,8 @@ export async function generateStory(args: {
     for (let i = 0; i < story.scenes.length; i++) {
       const scene = story.scenes[i];
 
+      const shotType = scene.shotType ?? "subject";
+
       let keyframeUrl: string;
       if (scene.sourceImageId) {
         const src = (
@@ -92,31 +99,37 @@ export async function generateStory(args: {
         )[0];
         if (!src) throw new Error(`scene ${i + 1}: source image not found`);
         keyframeUrl = toAbsoluteUrl(src.url);
-        tick(`scene ${i + 1}: using picked image`);
+        tick(`scene ${i + 1} (${shotType}): using picked image`);
       } else {
-        if (!canon) throw new Error("scene needs source image OR influencer needs canonical face");
-        tick(`scene ${i + 1}: keyframe`);
-        // Scene-first prompt ordering. Image models weight the front of the
-        // prompt heavily, so leading with the visualDirection ensures the
-        // SCENE renders (Eiffel tower, Tokyo street, whatever) instead of
-        // getting crowded out by the locked character description. Photoreal
-        // anchor at the very start, character traits at the end as identity
-        // ballast, hard negative to fight cartoon/illustration drift.
+        tick(`scene ${i + 1} (${shotType}): keyframe`);
+        // Subject shots include character traits + face reference. Scenery
+        // and detail shots SKIP the character entirely so the model can
+        // actually render landscapes / cutaways without dragging a face into
+        // the frame — that's the cornerstone of travel-creator B-roll.
+        const isSubject = shotType === "subject";
+        if (isSubject && !canon) {
+          throw new Error("subject scene needs influencer canonical face — pick one first");
+        }
+
+        const promptParts = [PHOTOREAL_PREFIX, scene.visualDirection];
+        if (isSubject) promptParts.push(inf.persona.visualPrompt);
+
+        const negativeParts = [HARD_NEGATIVE];
+        if (isSubject && inf.persona.negativePrompt) {
+          negativeParts.unshift(inf.persona.negativePrompt);
+        }
+        if (!isSubject) negativeParts.push(NO_PEOPLE_NEGATIVE);
+
         const kf = await provider.generateImage({
-          prompt: [PHOTOREAL_PREFIX, scene.visualDirection, inf.persona.visualPrompt]
-            .filter(Boolean)
-            .join(", "),
-          negativePrompt: inf.persona.negativePrompt
-            ? `${inf.persona.negativePrompt}, ${HARD_NEGATIVE}`
-            : HARD_NEGATIVE,
+          prompt: promptParts.filter(Boolean).join(", "),
+          negativePrompt: negativeParts.join(", "),
           aspectRatio: "9:16",
-          faceReferenceUrl: toAbsoluteUrl(canon.url),
+          faceReferenceUrl: isSubject && canon ? toAbsoluteUrl(canon.url) : undefined,
           count: 1,
           mode,
-          // Story scenes prioritize scene fidelity over pixel-perfect face
-          // matching — the canonical reference still anchors identity
-          // recognizably but doesn't drag every keyframe back to a portrait.
-          idWeightOverride: 0.7,
+          // Subject shots: scene-fidelity-leaning identity weight (0.7).
+          // Scenery/detail: no PuLID at all — engine is plain Flux.
+          idWeightOverride: isSubject ? 0.7 : undefined,
         });
         keyframeUrl = kf.images[0].url;
       }
@@ -124,7 +137,7 @@ export async function generateStory(args: {
       tick(`scene ${i + 1}: animating`);
       const vid = await provider.generateVideo({
         imageUrl: keyframeUrl,
-        prompt: buildMotionPrompt(scene.visualDirection),
+        prompt: buildMotionPrompt(scene.visualDirection, shotType),
         durationSec: scene.durationSec,
         mode,
       });
@@ -220,11 +233,21 @@ export async function generateStory(args: {
   }
 }
 
-function buildMotionPrompt(visualDirection: string) {
+function buildMotionPrompt(visualDirection: string, shotType: "subject" | "scenery" | "detail" = "subject") {
   const base = visualDirection.trim();
-  const motionHints =
-    "subtle natural motion: gentle head turn, slow blink, soft breathing, hair shifting in air, ambient camera drift, cinematic 24fps";
-  return `${base}. ${motionHints}. avoid: rubbing hands, repetitive gestures, exaggerated facial expressions, morphing limbs.`;
+  const motion =
+    shotType === "subject"
+      ? "subtle natural motion: gentle head turn, slow blink, soft breathing, hair shifting in air, ambient camera drift, cinematic 24fps"
+      : shotType === "scenery"
+        ? "slow cinematic camera move: gentle pan or push-in, atmospheric parallax, light shifting through clouds or foliage, ambient environmental motion (water, wind, distant traffic), 24fps"
+        : "macro focus pull, slight handheld breathing, gentle subject motion, 24fps";
+  const avoid =
+    shotType === "subject"
+      ? "rubbing hands, repetitive gestures, exaggerated facial expressions, morphing limbs"
+      : shotType === "scenery"
+        ? "people walking into frame, generic stock motion, jittery camera, unnatural zooms"
+        : "morphing object shape, jittery focus, talking heads";
+  return `${base}. ${motion}. avoid: ${avoid}.`;
 }
 
 async function materializeToDisk(url: string, destPath: string): Promise<void> {

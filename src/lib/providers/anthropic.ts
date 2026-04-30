@@ -132,11 +132,20 @@ export async function generateSequentialBeats(args: {
   topic: string;
   beatCount: number;
   durationSecPerBeat: number;
+  shotMix?: "talking" | "mixed" | "travel";
 }) {
   const c = getClient();
   if (!c) return mockBeats(args);
 
   const wordsPerBeat = Math.round(args.durationSecPerBeat * 2.3);
+  const shotMix = args.shotMix ?? "mixed";
+
+  const mixGuidance =
+    shotMix === "talking"
+      ? `EVERY beat is a "subject" shot — the influencer on camera (medium / close-up / mid-walk-and-talk). No B-roll. Use this for explainers and talking-head formats.`
+      : shotMix === "travel"
+        ? `Travel-creator B-roll mix: aim for ~30% "subject" shots (the influencer on camera) and ~70% "scenery"/"detail" shots (landscapes, food, signs, hands, architecture, transit). Open and close on subject if it serves the arc; pack the middle with scenery and detail. Specific locations and props in scenery prompts!`
+        : `Mixed shot variety: roughly half "subject" (influencer on camera), half "scenery" or "detail" (cutaways and B-roll). Vary framing between beats so it doesn't feel monotone.`;
 
   const resp = await c.messages.create({
     model: MODEL,
@@ -145,9 +154,17 @@ export async function generateSequentialBeats(args: {
 
 CRITICAL: each visualDirection becomes the prompt sent to an image-to-video model. The model can only render what you literally describe. If the topic mentions a place, a brand, a prop, an action — those exact things must appear in EVERY beat's visualDirection where relevant. Generic descriptions like "a person walking in soft light" produce videos with nothing to do with the topic.
 
+Each beat has a "shotType":
+- "subject" — the influencer on camera. Reference their character traits in visualDirection (framing, micro-action). The pipeline locks the face from canonical.
+- "scenery" — pure environment B-roll: landscapes, architecture, streets, transit, weather. NO person in frame. Lean into the location. Think travel-doc cinematography.
+- "detail" — close-up cutaway: food, hands, an object, a sign, fabric texture, footprints. Hyper-specific, macro framing.
+
+${mixGuidance}
+
 Hard rules:
-- Each visualDirection MUST reference the specific topic elements (location, prop, action, time of day) by name. "approaching the Eiffel Tower's iron base", not "approaching a tower".
-- Each visualDirection should be a SHOT description: framing (wide / medium / close), lens (35mm / 85mm / handheld), lighting (golden hour / overcast / neon), micro-action (mid-laugh, hand brushing hair, looking up).
+- Each visualDirection MUST reference the specific topic elements (location, prop, action, time of day) by name. "approaching the Eiffel Tower's iron base", not "approaching a tower". For scenery/detail shots, double down on environmental specifics — "rusted padlocks on the Pont des Arts railing" beats "a bridge".
+- Each visualDirection should be a SHOT description: framing (wide / medium / close / macro), lens (35mm / 85mm / handheld), lighting (golden hour / overcast / neon), motion or micro-action.
+- For "scenery" and "detail" shots: do NOT describe the influencer. The visualDirection should read like a B-roll instruction.
 - The fullScript is ONE continuous spoken take — written like a real person talking, not a marketing template. No "wait you didn't know about", "POV:", "I tried it for X days". Use contractions, micro-pauses, observational specifics.
 - The arc: 3 beats = setup → development → payoff. 5 beats = setup → escalate → midpoint → escalate → resolve.
 
@@ -169,6 +186,7 @@ Return JSON:
   "beats": [
     {
       "visualDirection": string (cinematic shot description for THIS moment, MUST reference the topic's specifics by name),
+      "shotType": "subject" | "scenery" | "detail",
       "spokenChunk": string (which slice of the script lands during this beat — informational, not used for separate TTS)
     }
     // ... beatCount entries
@@ -176,15 +194,17 @@ Return JSON:
   "hashtags": string[] (5-8 lowercase, no #)
 }
 
-Example for topic "walk to the Eiffel Tower":
+Example for topic "walk to the Eiffel Tower" with shotMix=travel and beatCount=5:
 {
   "title": "eiffel walk",
   "globalCaption": "first time seeing it up close",
-  "fullScript": "okay so i'm finally doing this. i've been in paris four days and somehow kept putting it off, like it was too obvious or something. but the light is doing this thing right now and. yeah. it's worth it.",
+  "fullScript": "okay so i'm finally doing this. four days in paris, kept putting it off. but right now the light is doing this thing through the iron and i think i finally get it.",
   "beats": [
-    {"visualDirection":"medium shot, walking down Avenue de la Bourdonnais toward the Eiffel Tower visible in the distance, late afternoon golden hour, slight handheld sway, 35mm shallow DOF, hair catching wind","spokenChunk":"okay so i'm finally doing this..."},
-    {"visualDirection":"low angle wide shot at the base of the Eiffel Tower, iron lattice towering overhead filling the frame, subject looking up with hand shading eyes, soft warm sun raking through the structure","spokenChunk":"i've been in paris four days..."},
-    {"visualDirection":"close-up profile, subject smiling softly with the Eiffel Tower's iron beams visible bokeh'd behind their shoulder, magic-hour rim light, 85mm","spokenChunk":"but the light is doing this thing..."}
+    {"visualDirection":"wide drone-style aerial pulling slowly toward the Eiffel Tower against a golden Parisian skyline, Haussmann rooftops, 24mm","shotType":"scenery","spokenChunk":"okay so i'm finally doing this..."},
+    {"visualDirection":"medium handheld shot walking down Avenue de la Bourdonnais, the Eiffel Tower visible centered in the distance, late afternoon golden hour, 35mm shallow DOF, hair catching wind","shotType":"subject","spokenChunk":"four days in paris..."},
+    {"visualDirection":"macro close-up of cobblestones and worn Parisian street, soft golden bokeh of distant tourists, slow forward dolly, 50mm","shotType":"detail","spokenChunk":"kept putting it off..."},
+    {"visualDirection":"low angle wide shot at the base of the Eiffel Tower, iron lattice towering overhead filling the frame, soft warm sun raking through the structure, no people in frame","shotType":"scenery","spokenChunk":"but right now..."},
+    {"visualDirection":"close-up profile, subject smiling softly with the Eiffel Tower's iron beams bokeh'd behind their shoulder, magic-hour rim light, 85mm","shotType":"subject","spokenChunk":"...i think i finally get it."}
   ],
   "hashtags": ["paris","eiffeltower","goldenhour","solotravel","slowtravel","parisdiaries"]
 }
@@ -201,9 +221,30 @@ Now plan beats for the actual topic above with the same level of specificity.`,
   return parseJsonStrict(text) as ReturnType<typeof mockBeats>;
 }
 
-function mockBeats(args: { topic: string; beatCount: number; durationSecPerBeat: number }) {
+function mockBeats(args: {
+  topic: string;
+  beatCount: number;
+  durationSecPerBeat: number;
+  shotMix?: "talking" | "mixed" | "travel";
+}) {
+  // Distribute shot types per the mix preset so the mock output mirrors what
+  // real Claude would emit shape-wise — keeps the rest of the pipeline honest
+  // when running offline.
+  const mix = args.shotMix ?? "mixed";
+  const shotTypes: ("subject" | "scenery" | "detail")[] = Array.from(
+    { length: args.beatCount },
+    (_, i) => {
+      if (mix === "talking") return "subject";
+      if (mix === "travel") {
+        if (i === 0 || i === args.beatCount - 1) return "subject";
+        return i % 2 === 0 ? "scenery" : "detail";
+      }
+      return i % 2 === 0 ? "subject" : "scenery";
+    },
+  );
   const beats = Array.from({ length: args.beatCount }, (_, i) => ({
-    visualDirection: `beat ${i + 1} of ${args.beatCount} for ${args.topic}, cinematic, specific framing, soft natural light`,
+    visualDirection: `${shotTypes[i] === "subject" ? "subject medium shot" : shotTypes[i] === "scenery" ? "wide environmental scenery" : "macro detail close-up"} for ${args.topic}, cinematic, specific framing, soft natural light`,
+    shotType: shotTypes[i],
     spokenChunk: `chunk ${i + 1}`,
   }));
   return {
