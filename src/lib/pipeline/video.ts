@@ -14,7 +14,8 @@ import { generateScript } from "../providers/anthropic";
 import { burnCaptionsAndCrop } from "./postprocess";
 import { buildKeyframePrompt, buildKeyframeNegative, buildMotionPrompt } from "../promptStyle";
 import type { Format } from "../formatPresets";
-import { imageGenAspect, type AspectRatio, type Quality } from "../renderTarget";
+import { dimensionsFor, imageGenAspect, type AspectRatio, type Quality } from "../renderTarget";
+import { normalizeKeyframe } from "../normalizeImage";
 
 const VOICE_ENABLED = process.env.VOICE_ENABLED === "1";
 const LIPSYNC_ENABLED = process.env.LIPSYNC_ENABLED === "1";
@@ -194,6 +195,17 @@ export async function generateVideo(args: {
     const animationStart = 25;
     const animationEnd = 92;
     const stepSpan = (animationEnd - animationStart) / variantCount;
+
+    // Normalize the keyframe to exactly the target dimensions before
+    // looping. Same keyframe gets used by every variant, so we only
+    // normalize once.
+    const target = dimensionsFor(aspectRatio, quality);
+    keyframeUrl = await normalizeKeyframe({
+      sourceUrl: keyframeUrl,
+      width: target.width,
+      height: target.height,
+      influencerId: inf.id,
+    });
 
     for (let i = 0; i < variantCount; i++) {
       const variantId = variantCount === 1 ? jobId : `${jobId}_${i + 1}`;

@@ -22,6 +22,7 @@ import {
   type AspectRatio,
   type Quality,
 } from "../renderTarget";
+import { normalizeKeyframe } from "../normalizeImage";
 import type { StoryScene } from "../db/schema";
 
 // Prefer system ffmpeg (libass + libfreetype + a real font library) over the
@@ -172,6 +173,17 @@ export async function generateStory(args: {
         });
         keyframeUrl = kf.images[0].url;
       }
+
+      // Normalize the keyframe to exactly target dimensions before handing
+      // to the I2V model. Image generators (Seedream Edit, Flux Kontext)
+      // can return slightly off-shape outputs and Kling rejects anything
+      // outside a 0.4-2.5 aspect ratio with HTTP 422.
+      keyframeUrl = await normalizeKeyframe({
+        sourceUrl: keyframeUrl,
+        width: target.width,
+        height: target.height,
+        influencerId: inf.id,
+      });
 
       tick(`scene ${i + 1}: animating`);
       const vid = await provider.generateVideo({
