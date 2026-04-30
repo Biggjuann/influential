@@ -25,6 +25,7 @@ ENV HOSTNAME=0.0.0.0
 # is unavailable.
 RUN apt-get update && apt-get install -y --no-install-recommends \
       ca-certificates \
+      curl \
       ffmpeg \
       fontconfig \
       fonts-dejavu \
@@ -33,9 +34,14 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
       fonts-liberation \
       fonts-roboto \
       fonts-open-sans \
-      fonts-pacifico \
-      fonts-lobster \
+    && mkdir -p /usr/share/fonts/truetype/google \
+    && curl -fsSL -o /usr/share/fonts/truetype/google/Pacifico-Regular.ttf \
+        https://github.com/google/fonts/raw/main/ofl/pacifico/Pacifico-Regular.ttf \
+    && curl -fsSL -o /usr/share/fonts/truetype/google/Lobster-Regular.ttf \
+        https://github.com/google/fonts/raw/main/ofl/lobster/Lobster-Regular.ttf \
     && fc-cache -fv \
+    && apt-get purge -y curl \
+    && apt-get autoremove -y \
     && rm -rf /var/lib/apt/lists/*
 
 # Next standalone bundles only what the server needs (including native deps
