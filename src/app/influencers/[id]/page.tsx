@@ -45,14 +45,14 @@ export default async function InfluencerPage({ params }: { params: Promise<{ id:
         voiceRefUrl={inf.voiceRefUrl}
       />
 
+      <ProductsSection influencerId={inf.id} initialProducts={products} />
+
       <InfluencerClient
         influencerId={inf.id}
         canonicalImageId={inf.canonicalImageId}
         initialImages={images}
         initialVideos={videos}
       />
-
-      <ProductsSection influencerId={inf.id} initialProducts={products} />
 
       <section>
         <div className="flex items-center justify-between mb-4">
