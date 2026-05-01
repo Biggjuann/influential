@@ -16,13 +16,30 @@ export function buildKeyframePrompt(args: {
   withProduct?: { name: string; description?: string | null };
 }): string {
   const f = getFormat(args.format);
-  const parts = [f.prefix];
+
+  // When a product reference is attached, lead with VERY explicit
+  // multi-image instructions. Nano Banana / Qwen-Edit / Kontext-Multi all
+  // work better when each input image is named ("Image 1 = person, Image 2
+  // = product") and the model is told to preserve specific attributes of
+  // the product image rather than reinterpret them. This is what stops the
+  // output from being "Flux's idea of a blender" instead of the user's
+  // actual uploaded blender.
   if (args.withProduct) {
-    parts.push(
-      `the person from the first reference image holding ${args.withProduct.name}${args.withProduct.description ? ` (${args.withProduct.description})` : ""} from the second reference image, product clearly visible and accurate to reference`,
-    );
+    const desc = args.withProduct.description ? ` (${args.withProduct.description})` : "";
+    return [
+      `Compose a single photograph using BOTH reference images.`,
+      `Image 1 is the PERSON: keep their face, hair, body proportions, and skin exactly as in image 1.`,
+      `Image 2 is the PRODUCT — a ${args.withProduct.name}${desc}. The product in the output MUST exactly match image 2's design, colour, controls, materials, branding, and proportions. Do NOT redesign it. Do NOT substitute a different model.`,
+      `Action: ${args.visualDirection}.`,
+      `${f.prefix}.`,
+      args.characterPrompt ?? "",
+    ]
+      .filter(Boolean)
+      .join(" ");
   }
-  parts.push(args.visualDirection);
+
+  // No product — the existing format-anchor-then-scene-then-character order.
+  const parts = [f.prefix, args.visualDirection];
   if (args.shotType === "subject" && args.characterPrompt) parts.push(args.characterPrompt);
   return parts.filter(Boolean).join(", ");
 }

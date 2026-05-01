@@ -29,11 +29,15 @@ const ENDPOINTS = {
   fluxId: process.env.FAL_ENDPOINT_FLUX_ID ?? "fal-ai/flux-pulid",
   // Multi-image conditioning for "influencer holding/using the actual
   // product". Takes both the canonical face image and the product image
-  // as references in one call. Seedream 4 Edit is the most reliable
-  // multi-ref endpoint on fal (accepts up to 5 image_urls); override with
-  // FAL_ENDPOINT_MULTI_REF for Flux Kontext / Nano Banana / Qwen Edit etc.
-  multiRef:
-    process.env.FAL_ENDPOINT_MULTI_REF ?? "fal-ai/bytedance/seedream/v4/edit",
+  // as references in one call.
+  //
+  // Default is Nano Banana (Google's Gemini 2.5 Flash Image edit) which is
+  // explicitly built for "show subject X with object Y" compositing across
+  // multiple reference images. Earlier we tried Seedream 4 Edit but that's
+  // a single-image-edit model and silently ignored the second reference.
+  // Override with FAL_ENDPOINT_MULTI_REF for Qwen-Image-Edit-Plus, Flux
+  // Kontext multi, Runway Gen-4 Reference, etc.
+  multiRef: process.env.FAL_ENDPOINT_MULTI_REF ?? "fal-ai/nano-banana/edit",
   // Alternative engines without face-locking — much better at clothing
   // graphics, text on objects, and overall photorealism. Tradeoff: face will
   // resemble the visualPrompt but not be pixel-locked to canonical.
@@ -189,21 +193,38 @@ async function falImage(input: ImageGenInput): Promise<ImageGenOutput> {
   }
 
   // Multi-image conditioning: both face + product references are present.
-  // Seedream 4 Edit (default) takes a list of reference images and a prompt
-  // describing how they should be combined. Output composites them into a
-  // believable shot of the influencer using the actual uploaded product.
-  // Both image_size (Seedream/Flux Kontext) and aspect_ratio (some forks)
-  // are sent so endpoint swaps don't require pipeline changes.
+  // Default endpoint is Nano Banana (Gemini 2.5 Flash Image edit) which
+  // composites by reading explicit instructions about which image is which.
+  // We pass image_size + aspect_ratio + num_images broadly so endpoint
+  // swaps via FAL_ENDPOINT_MULTI_REF don't require code changes.
   if (input.faceReferenceUrl && input.productReferenceUrl) {
-    const data = await call<FluxResult>(ENDPOINTS.multiRef, {
+    type NanoResult = {
+      images?: { url: string; width?: number; height?: number }[];
+      image?: { url: string; width?: number; height?: number };
+      seed?: number;
+    };
+    const data = await call<NanoResult>(ENDPOINTS.multiRef, {
       prompt: input.prompt,
       image_urls: [input.faceReferenceUrl, input.productReferenceUrl],
       image_size: { width: size.width, height: size.height },
       aspect_ratio: input.aspectRatio ?? "9:16",
       num_images: count,
       seed: input.seed,
+      output_format: "jpeg",
     });
-    return { images: data.images.map((img) => ({ ...img, seed: data.seed })) };
+    // Nano Banana sometimes returns a single { image } instead of { images }.
+    const imgs = data.images ?? (data.image ? [data.image] : []);
+    if (imgs.length === 0) {
+      throw new Error(`multi-ref ${ENDPOINTS.multiRef}: response missing images`);
+    }
+    return {
+      images: imgs.map((img) => ({
+        url: img.url,
+        width: img.width ?? size.width,
+        height: img.height ?? size.height,
+        seed: data.seed ?? 0,
+      })),
+    };
   }
 
   // Default: face-lock via Flux + PuLID (only when we have a reference).
