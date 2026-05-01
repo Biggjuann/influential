@@ -280,6 +280,147 @@ function mockBeats(args: {
   };
 }
 
+/**
+ * Parse a free-form "director's brief" — the multi-paragraph timestamped
+ * writing creators naturally produce when describing a reel — into the
+ * structured beat list our pipeline renders.
+ *
+ * The user provides ONE textarea with timestamps ("0-2s", "2-5s"), spoken
+ * lines (in quotes), visual direction, and stylistic notes. Claude reads
+ * the whole thing, infers format (UGC / unboxing / tutorial / etc),
+ * detects each timed beat with its duration + shotType, and returns the
+ * structured payload the rest of the pipeline already understands.
+ */
+export async function parseDirectorsBrief(args: {
+  brief: string;
+  persona: { name: string; voiceDescription: string; contentPillars: string[] };
+  defaultFormat?: import("../formatPresets").Format;
+  product?: { name: string; description: string | null } | null;
+}): Promise<{
+  title: string;
+  format: import("../formatPresets").Format;
+  globalCaption: string;
+  fullScript: string;
+  totalDurationSec: number;
+  hashtags: string[];
+  beats: Array<{
+    visualDirection: string;
+    durationSec: number;
+    shotType: "subject" | "scenery" | "detail";
+    spokenChunk: string;
+  }>;
+}> {
+  const c = getClient();
+  if (!c) return mockParsedBrief(args);
+
+  const productBlock = args.product
+    ? `\n\nA product is attached: "${args.product.name}"${args.product.description ? ` (${args.product.description})` : ""}. The brief should reference this specific product.`
+    : "";
+
+  const resp = await c.messages.create({
+    model: MODEL,
+    max_tokens: 2500,
+    system: `You parse a creator's director's brief into a structured reel plan.
+
+The brief is freeform writing with timestamps (e.g. "0-2s", "2-5s", "11-13s"), spoken lines in quotes, and visual direction. Read the WHOLE brief and emit a structured plan.
+
+CRITICAL RULES:
+
+1. Each timestamped block in the brief = ONE beat. Preserve the user's order and durations exactly. If "5-8s" appears, that beat's durationSec = 3.
+2. spokenChunk = the literal quoted line for that beat (verbatim, no edits). If a beat has no quoted dialogue, spokenChunk = "".
+3. fullScript = all spokenChunks joined naturally with spaces, in beat order. This is what gets sent to TTS.
+4. visualDirection = everything ABOUT the visuals for that beat — framing, props, micro-action, lighting, lens, mood. Strip out the spoken line. Keep specific details (colors, materials, exact gestures) — they drive the keyframe.
+5. shotType per beat:
+   - "subject" = the influencer/creator on camera (talking, gesturing, holding product on camera)
+   - "detail" = close-up cutaway (hands on knob, product texture, label, blade, sip)
+   - "scenery" = wide environment, no person (kitchen counter alone, sunlight through curtain)
+6. Format inference: read the whole brief and pick ONE of:
+   ugc / tutorial / unboxing / product_review / try_on / travel / cinematic
+   Default to "ugc" if it sounds like phone-shot creator content. "product_review" for "review/demonstrating" briefs. "tutorial" for step-by-step.
+7. globalCaption: pull a single 4-8 word caption that captures the hook of the brief, lowercase. Or use the first quoted line if it's short.
+8. totalDurationSec = sum of all beat durationSecs.
+9. hashtags: 5-8 lowercase tags from the niche/topic.
+
+If timestamps are ambiguous or missing, infer reasonable beat splits from the writing structure (paragraphs, transitions). Aim for 4-8 beats total.
+
+Output JSON only, no markdown fences.`,
+    messages: [
+      {
+        role: "user",
+        content: `Persona: ${args.persona.name}
+Voice: ${args.persona.voiceDescription}
+Pillars: ${args.persona.contentPillars.join(", ")}
+${args.defaultFormat ? `Default format if unsure: ${args.defaultFormat}` : ""}${productBlock}
+
+Brief:
+"""
+${args.brief}
+"""
+
+Return JSON:
+{
+  "title": string (3-6 words, internal),
+  "format": "ugc" | "tutorial" | "unboxing" | "product_review" | "try_on" | "travel" | "cinematic",
+  "globalCaption": string (≤ 50 chars, lowercase preferred),
+  "fullScript": string (all spoken lines joined naturally),
+  "totalDurationSec": number,
+  "hashtags": string[],
+  "beats": [
+    {
+      "visualDirection": string (cinematic specifics, no quoted dialogue),
+      "durationSec": number (integer seconds),
+      "shotType": "subject" | "scenery" | "detail",
+      "spokenChunk": string (the verbatim quoted line for this beat, or "" if none)
+    }
+    // ... one entry per timestamped block in the brief
+  ]
+}`,
+      },
+    ],
+  });
+
+  const text = resp.content
+    .filter((b): b is Anthropic.TextBlock => b.type === "text")
+    .map((b) => b.text)
+    .join("");
+  return parseJsonStrict(text) as ReturnType<typeof mockParsedBrief>;
+}
+
+function mockParsedBrief(args: {
+  brief: string;
+  defaultFormat?: import("../formatPresets").Format;
+}) {
+  const fmt = args.defaultFormat ?? "ugc";
+  // Crude split on timestamp-like patterns — good enough for offline runs.
+  const matches = Array.from(args.brief.matchAll(/(\d+)[-–](\d+)\s*s/g));
+  const beats =
+    matches.length > 0
+      ? matches.map((m, i) => ({
+          visualDirection: `beat ${i + 1} from brief, cinematic specifics`,
+          durationSec: Math.max(2, parseInt(m[2], 10) - parseInt(m[1], 10)),
+          shotType: i % 2 === 0 ? ("subject" as const) : ("detail" as const),
+          spokenChunk: `Mock line ${i + 1}.`,
+        }))
+      : [
+          {
+            visualDirection: "subject medium shot, talking to camera",
+            durationSec: 5,
+            shotType: "subject" as const,
+            spokenChunk: "Mock spoken line from the brief.",
+          },
+        ];
+  const total = beats.reduce((s, b) => s + b.durationSec, 0);
+  return {
+    title: "brief preview",
+    format: fmt,
+    globalCaption: "brief preview",
+    fullScript: beats.map((b) => b.spokenChunk).join(" "),
+    totalDurationSec: total,
+    hashtags: ["fyp", "ugc", "viral"],
+    beats,
+  };
+}
+
 function mockPersona(brief: { niche: string; vibe?: string; gender?: string }) {
   return {
     name: "Aria Vale",

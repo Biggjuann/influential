@@ -32,7 +32,55 @@ const MODE_INFO: Record<Mode, { label: string; perScene: number }> = {
   premium: { label: "Premium", perScene: 0.4 },
 };
 
+type ReelMode = "brief" | "manual";
+
 export function NewReelClient({
+  influencerId,
+  gallery,
+  defaultFormat,
+  products,
+}: {
+  influencerId: string;
+  gallery: { id: string; url: string }[];
+  defaultFormat: Format;
+  products: Product[];
+}) {
+  const [reelMode, setReelMode] = useState<ReelMode>("brief");
+
+  return (
+    <div className="space-y-4">
+      <div className="flex gap-1 p-1 rounded-lg bg-bg/60 border border-border w-fit">
+        {(["brief", "manual"] as ReelMode[]).map((m) => (
+          <button
+            key={m}
+            onClick={() => setReelMode(m)}
+            className={`px-4 py-1.5 text-sm rounded-md transition-colors ${
+              reelMode === m ? "bg-panel text-text" : "text-muted hover:text-text"
+            }`}
+          >
+            {m === "brief" ? "Director's brief" : "Manual scene editor"}
+          </button>
+        ))}
+      </div>
+      {reelMode === "brief" ? (
+        <BriefMode
+          influencerId={influencerId}
+          defaultFormat={defaultFormat}
+          products={products}
+        />
+      ) : (
+        <ManualMode
+          influencerId={influencerId}
+          gallery={gallery}
+          defaultFormat={defaultFormat}
+          products={products}
+        />
+      )}
+    </div>
+  );
+}
+
+function ManualMode({
   influencerId,
   gallery,
   defaultFormat,
@@ -395,6 +443,197 @@ export function NewReelClient({
     </form>
   );
 }
+
+function BriefMode({
+  influencerId,
+  defaultFormat,
+  products,
+}: {
+  influencerId: string;
+  defaultFormat: Format;
+  products: Product[];
+}) {
+  const router = useRouter();
+  const [brief, setBrief] = useState("");
+  const [title, setTitle] = useState("");
+  const [format, setFormat] = useState<Format | undefined>(defaultFormat);
+  const [aspectRatio, setAspectRatio] = useState<AspectRatio>("9:16");
+  const [quality, setQuality] = useState<Quality>("1080p");
+  const [mode, setMode] = useState<Mode>("standard");
+  const [productId, setProductId] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+
+  // Quick stats: count timestamped beats and total seconds in the brief
+  // so the user has a rough cost estimate before submission.
+  const beatMatches = Array.from(
+    brief.matchAll(/(\d+)\s*[-–]\s*(\d+)\s*s/g),
+  );
+  const beatCount = beatMatches.length;
+  const totalSec = beatMatches.reduce(
+    (s, m) => s + Math.max(0, parseInt(m[2], 10) - parseInt(m[1], 10)),
+    0,
+  );
+  const perScene = mode === "draft" ? 0.05 : mode === "standard" ? 0.2 : 0.4;
+  const estCost = beatCount > 0 ? beatCount * perScene : 0;
+
+  async function go(e: React.FormEvent) {
+    e.preventDefault();
+    setBusy(true);
+    setErr(null);
+    try {
+      const res = await fetch("/api/stories", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          influencerId,
+          briefText: brief.trim(),
+          title: title.trim() || undefined,
+          format,
+          aspectRatio,
+          quality,
+          mode,
+          productId: productId ?? undefined,
+        }),
+      });
+      if (!res.ok) throw new Error(await res.text());
+      const { id } = (await res.json()) as { id: string };
+      router.push(`/influencers/${influencerId}/reels/${id}`);
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : String(e));
+      setBusy(false);
+    }
+  }
+
+  return (
+    <form onSubmit={go} className="space-y-6">
+      <div className="rounded-xl border border-border bg-panel p-4 sm:p-5 space-y-4">
+        <Field
+          label="Director's brief"
+          hint="One free-form description with timestamps and quoted dialogue. Claude parses it into beats."
+        >
+          <textarea
+            value={brief}
+            onChange={(e) => setBrief(e.target.value)}
+            rows={16}
+            placeholder={EXAMPLE_BRIEF}
+            className="w-full rounded-md border border-border bg-bg px-3 py-2 text-sm focus:border-accent outline-none resize-y font-mono leading-relaxed"
+          />
+          <div className="text-xs text-muted mt-1.5 flex flex-wrap gap-x-4 gap-y-1">
+            <span>
+              Detected beats: <span className="tabular-nums">{beatCount}</span>
+            </span>
+            <span>
+              Total duration: <span className="tabular-nums">{totalSec}s</span>
+            </span>
+            {beatCount === 0 && brief.trim().length > 30 && (
+              <span className="text-amber-300">
+                No timestamps detected — Claude will infer beat splits, results may vary.
+              </span>
+            )}
+          </div>
+        </Field>
+
+        <Field label="Title (optional)" hint="Just for your roster. Claude generates one if blank.">
+          <input
+            value={title}
+            onChange={(e) => setTitle(e.target.value)}
+            placeholder="dark green blender review"
+            className="w-full h-10 rounded-md border border-border bg-bg px-3 text-sm focus:border-accent outline-none"
+          />
+        </Field>
+
+        <FormatPicker
+          value={(format ?? defaultFormat) as Format}
+          onChange={setFormat}
+          label="Format hint (optional)"
+          hint="If you're unsure, leave it — Claude infers from the brief."
+        />
+
+        {format !== undefined && PRODUCT_FORMATS.has(format) && (
+          <ProductPicker
+            products={products}
+            value={productId}
+            onChange={setProductId}
+            label="Product"
+            hint="Detail shots use the product image; subject shots composite influencer + product."
+          />
+        )}
+
+        <div>
+          <div className="flex items-baseline justify-between mb-2">
+            <span className="text-sm font-medium">Render target</span>
+            <span className="text-xs text-muted">
+              Per-beat duration is read from the brief; quality + aspect apply globally.
+            </span>
+          </div>
+          <RenderTargetBar
+            aspectRatio={aspectRatio}
+            quality={quality}
+            length={5}
+            onAspectChange={setAspectRatio}
+            onQualityChange={setQuality}
+            onLengthChange={() => {
+              /* per-beat duration comes from the brief */
+            }}
+          />
+        </div>
+
+        <div className="flex flex-wrap items-center gap-4">
+          <div>
+            <div className="text-xs text-muted mb-1">Quality tier</div>
+            <div className="flex gap-2">
+              {(["draft", "standard", "premium"] as Mode[]).map((m) => (
+                <button
+                  type="button"
+                  key={m}
+                  onClick={() => setMode(m)}
+                  className={`h-9 px-3 text-sm rounded-md border transition-colors capitalize ${
+                    mode === m ? "border-accent bg-accent/15" : "border-border hover:bg-border/40"
+                  }`}
+                >
+                  {m}
+                </button>
+              ))}
+            </div>
+          </div>
+          <div className="sm:ml-auto sm:text-right">
+            <div className="text-xs text-muted">Estimated cost</div>
+            <div className="text-lg font-medium tabular-nums">
+              {estCost > 0 ? `~$${estCost.toFixed(2)}` : "—"}
+            </div>
+          </div>
+        </div>
+
+        {err && (
+          <div className="rounded-md border border-red-500/30 bg-red-500/10 p-3 text-sm text-red-300 whitespace-pre-wrap font-mono break-words">
+            {err}
+          </div>
+        )}
+
+        <Button type="submit" disabled={busy || brief.trim().length < 20} size="lg" className="w-full">
+          {busy ? "Parsing brief…" : "Render reel from brief"}
+        </Button>
+      </div>
+    </form>
+  );
+}
+
+const EXAMPLE_BRIEF = `A 15-second vertical UGC product review video, iPhone aesthetic. The girl is reviewing and demonstrating the blender — not teaching a recipe. She's excited about the product itself.
+
+0–2s — HOOK: Girl holds the dark charcoal green blender base close to camera with both hands, eyes wide, says straight into lens: "This blender just changed my morning routine."
+
+2–5s: She runs her finger along the matte dark body, taps the single round green dial knob, then spins it slowly — small copper LED dots light up around it. She tilts her head impressed: "One knob. That's literally all you need."
+
+5–8s: She lifts the clear glass jar, knocks on it with her knuckle — solid sound — and shows the blade assembly underneath: "Glass jar, not plastic. You can actually see everything inside."
+
+8–11s: She locks the jar onto the base with a satisfying click, loads fruits in, presses the dial — blender fires up instantly. She steps back and gestures at it like "look at this thing": "Hear how quiet that is?"
+
+11–13s: She pours the smoothie, holds the glass up to the light — vibrant color, smooth texture: "First try. No chunks."
+
+13–15s: Takes a sip, looks at the blender, then back to camera with a nod: "Yeah. Worth it."
+
+Style: Raw UGC product review, vertical 9:16, warm natural light, clean kitchen counter, blender always in frame, handheld shaky cam, no text overlays.`;
 
 function ScriptTimingBadge({
   fullScript,
