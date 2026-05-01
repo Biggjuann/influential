@@ -37,7 +37,14 @@ const ffmpegBin = existsSync(SYSTEM_FFMPEG)
 const HAS_LIBASS = ffmpegBin === SYSTEM_FFMPEG;
 const HAS_FFPROBE = existsSync(SYSTEM_FFPROBE);
 
-// (prompt anchors / motion now come from formatPresets.ts via promptStyle.ts)
+// Voice/lipsync gating. Both default off; set in Railway env to enable.
+//   VOICE_ENABLED=1   → run TTS for the reel
+//   LIPSYNC_ENABLED=1 → run LatentSync on top of voice (requires voice on)
+// Heads up: lipsync is the slowest + most fragile step (LatentSync needs a
+// clearly visible face in the keyframe). When it fails it's caught and
+// surfaced in the story.skipped output, never blocks the render.
+const VOICE_ENABLED = process.env.VOICE_ENABLED === "1";
+const LIPSYNC_ENABLED = process.env.LIPSYNC_ENABLED === "1";
 
 export async function generateStory(args: {
   storyId: string;
@@ -78,6 +85,16 @@ export async function generateStory(args: {
   const target = dimensionsFor(aspectRatio, quality);
   const imgAspect = imageGenAspect(aspectRatio);
 
+  // Master keyframe reuse: when a product is attached, generate the
+  // composite "subject + actual product" keyframe ONCE and use it for
+  // every subject beat. Without this, each beat re-composes independently
+  // and the product (and influencer wardrobe) drifts shot-to-shot.
+  let masterSubjectProductKeyframe: string | null = null;
+
+  // Skipped-step log mirrored to the Story output so the UI can show
+  // "lipsync skipped: no face detected" etc.
+  const skipped: string[] = [];
+
   // Product reference: when set, the story's detail shots use the product's
   // canonical image as the keyframe directly (skipping image gen entirely)
   // and subject shots fall back to the regular face-locked path.
@@ -110,6 +127,9 @@ export async function generateStory(args: {
       const shotType = scene.shotType ?? "subject";
 
       let keyframeUrl: string;
+      const isSubject = shotType === "subject";
+      const hasProduct = !!(product && product.images && product.images.length > 0);
+
       if (scene.sourceImageId) {
         const src = (
           await db
@@ -121,26 +141,18 @@ export async function generateStory(args: {
         if (!src) throw new Error(`scene ${i + 1}: source image not found`);
         keyframeUrl = toAbsoluteUrl(src.url);
         tick(`scene ${i + 1} (${shotType}): using picked image`);
-      } else if (
-        product &&
-        shotType === "detail" &&
-        product.images &&
-        product.images.length > 0
-      ) {
-        // Product detail shot: animate the actual product image directly,
-        // skipping a fresh keyframe gen. This is the cornerstone of unboxing
-        // / product review / try-on flows — the product needs to look like
-        // the real product, not Flux's interpretation of the prompt.
-        keyframeUrl = toAbsoluteUrl(product.images[0]);
-        tick(`scene ${i + 1} (detail / product): using ${product.name}`);
+      } else if (isSubject && hasProduct && masterSubjectProductKeyframe) {
+        // Reuse the master "subject + product" composite for every
+        // subject beat. The animation prompt differs per beat but the
+        // influencer's face, wardrobe, and the product all stay locked.
+        keyframeUrl = masterSubjectProductKeyframe;
+        tick(`scene ${i + 1} (subject / product): reusing master`);
       } else {
         tick(`scene ${i + 1} (${shotType}/${format}): keyframe`);
-        const isSubject = shotType === "subject";
         if (isSubject && !canon) {
           throw new Error("subject scene needs influencer canonical face — pick one first");
         }
-        const useMultiRef =
-          isSubject && product && product.images && product.images.length > 0;
+        const useMultiRef = hasProduct;
         const kf = await provider.generateImage({
           prompt: buildKeyframePrompt({
             visualDirection: scene.visualDirection,
@@ -158,13 +170,15 @@ export async function generateStory(args: {
             personaNegative: isSubject ? inf.persona.negativePrompt : undefined,
           }),
           aspectRatio: imgAspect,
+          // Subject shots include face. Detail / scenery shots with a
+          // product DON'T include face — we want the model focused on
+          // putting the product in the scene, not on the influencer.
           faceReferenceUrl: isSubject && canon ? toAbsoluteUrl(canon.url) : undefined,
-          // When a product is attached AND this is a subject shot, also pass
-          // the product image so the multi-ref model puts the influencer
-          // with the ACTUAL uploaded product in frame (vs Flux hallucinating
-          // a generic version of "tennis racket" from the prompt text).
+          // Both subject AND non-subject (detail / scenery) shots get
+          // the product reference when available, so a "macro shot of
+          // the blender's knob" is the actual blender's actual knob.
           productReferenceUrl:
-            isSubject && product && product.images?.[0]
+            useMultiRef && product?.images?.[0]
               ? toAbsoluteUrl(product.images[0])
               : undefined,
           count: 1,
@@ -172,6 +186,13 @@ export async function generateStory(args: {
           idWeightOverride: isSubject ? 0.7 : undefined,
         });
         keyframeUrl = kf.images[0].url;
+
+        // Cache the first composite as the master so subsequent subject
+        // beats reuse it instead of paying for + drifting through new
+        // generations.
+        if (isSubject && hasProduct && !masterSubjectProductKeyframe) {
+          masterSubjectProductKeyframe = keyframeUrl;
+        }
       }
 
       // Normalize the keyframe to exactly target dimensions before handing
@@ -203,16 +224,28 @@ export async function generateStory(args: {
     }
 
     // 2. Voiceover for the whole script (single TTS call so the cadence is
-    //    continuous instead of a chopped-up sequence).
-    tick("voiceover");
-    const tts = await provider.tts({
-      text: story.fullScript,
-      voiceRefUrl: inf.voiceRefUrl ?? undefined,
-      voiceDescription: inf.persona.voiceDescription,
-      voicePreset: inf.persona.voicePreset,
-    });
-    const audioPath = join(tmp, "voice.wav");
-    await materializeToDisk(tts.audioUrl, audioPath);
+    //    continuous instead of a chopped-up sequence). Only runs when
+    //    VOICE_ENABLED — otherwise the reel is silent + caption-only.
+    let audioPath: string | null = null;
+    if (VOICE_ENABLED) {
+      try {
+        tick("voiceover");
+        const tts = await provider.tts({
+          text: story.fullScript,
+          voiceRefUrl: inf.voiceRefUrl ?? undefined,
+          voiceDescription: inf.persona.voiceDescription,
+          voicePreset: inf.persona.voicePreset,
+        });
+        const p = join(tmp, "voice.wav");
+        await materializeToDisk(tts.audioUrl, p);
+        audioPath = p;
+      } catch (e) {
+        skipped.push(`voice (${asMessage(e)})`);
+      }
+    } else {
+      skipped.push("voice (VOICE_ENABLED=0)");
+      step += 1;
+    }
 
     // 3. Concat + scale all scene clips into one silent reel at the chosen
     //    aspect ratio + quality.
@@ -227,7 +260,7 @@ export async function generateStory(args: {
     const sceneTotalSec = story.scenes.reduce((s, x) => s + x.durationSec, 0);
     let videoForMux = concatVideoPath;
     let finalDurationSec = sceneTotalSec;
-    if (HAS_FFPROBE) {
+    if (HAS_FFPROBE && audioPath) {
       try {
         const audioDur = await probeDuration(audioPath);
         if (audioDur > sceneTotalSec + 0.3) {
@@ -281,12 +314,50 @@ export async function generateStory(args: {
       step += 1;
     }
 
+    // 4a. Lipsync. When LIPSYNC_ENABLED + audio is available, run LatentSync
+    //     against the (padded) silent reel and the voiceover. The resulting
+    //     mp4 has the lips driven by the audio AND the audio embedded — we
+    //     skip the separate audio mux below in that case.
+    let videoHasAudio = false;
+    if (LIPSYNC_ENABLED && audioPath) {
+      try {
+        tick("syncing lips");
+        // Upload audio + video to URLs the lipsync provider can fetch. The
+        // padded video lives in tmp/, so we need it persisted. Same for the
+        // audio. Using persistFromFile to get an absolute URL.
+        const lipVideoAsset = await persistFromFile(videoForMux, {
+          key: `${inf.id}/tmp-lipsync/${nanoid(8)}_video.mp4`,
+          ext: "mp4",
+        });
+        const lipAudioAsset = await persistFromFile(audioPath, {
+          key: `${inf.id}/tmp-lipsync/${nanoid(8)}_audio.wav`,
+          ext: "wav",
+        });
+        const synced = await provider.lipsync({
+          videoUrl: toAbsoluteUrl(lipVideoAsset.url),
+          audioUrl: toAbsoluteUrl(lipAudioAsset.url),
+        });
+        const syncedPath = join(tmp, "synced.mp4");
+        await materializeToDisk(synced.videoUrl, syncedPath);
+        videoForMux = syncedPath;
+        videoHasAudio = true;
+      } catch (e) {
+        skipped.push(`lipsync (${asMessage(e)})`);
+      }
+    } else if (LIPSYNC_ENABLED && !audioPath) {
+      skipped.push("lipsync (no audio)");
+    } else {
+      skipped.push("lipsync (LIPSYNC_ENABLED=0)");
+    }
+
     // 5. Mux audio + (optional) caption subtitle onto the concatenated video.
+    //    If lipsync ran, the synced video already has audio — we only need
+    //    to overlay the caption (or do a no-op pass when there's no caption).
     tick("final mux");
     const finalPath = join(tmp, "final.mp4");
     await muxAudioAndCaption({
       videoPath: videoForMux,
-      audioPath,
+      audioPath: videoHasAudio ? null : audioPath,
       assPath,
       outputPath: finalPath,
     });
@@ -316,7 +387,12 @@ export async function generateStory(args: {
       .where(eq(schema.stories.id, story.id));
 
     args.onProgress?.(100, "done");
-    return { assetId, url: persisted.url, sceneCount: story.scenes.length };
+    return {
+      assetId,
+      url: persisted.url,
+      sceneCount: story.scenes.length,
+      skipped,
+    };
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     await db
@@ -327,6 +403,10 @@ export async function generateStory(args: {
   } finally {
     await rm(tmp, { recursive: true, force: true });
   }
+}
+
+function asMessage(e: unknown): string {
+  return e instanceof Error ? e.message.slice(0, 160) : String(e).slice(0, 160);
 }
 
 async function materializeToDisk(url: string, destPath: string): Promise<void> {
@@ -401,23 +481,25 @@ async function concatScenes(
 
 async function muxAudioAndCaption(opts: {
   videoPath: string;
-  audioPath: string;
+  /** Pass null when the input video already has the audio track (e.g. the
+   * output of lipsync, which embeds the synced audio). */
+  audioPath: string | null;
   assPath?: string;
   outputPath: string;
 }): Promise<void> {
-  const args: string[] = ["-y", "-i", opts.videoPath, "-i", opts.audioPath];
+  const args: string[] = ["-y", "-i", opts.videoPath];
+  if (opts.audioPath) args.push("-i", opts.audioPath);
 
-  if (opts.assPath) {
-    // libass subtitle burn-in. The path needs careful escaping inside the
-    // filtergraph (colons and backslashes are filter separators in ffmpeg's
-    // bizarre filter syntax). Sticking the .ass in the same tmp dir and
-    // referencing it by absolute path works because tmp paths don't contain
-    // characters that need filter-level escaping; we still escape `:` to be
-    // robust on macOS/Windows-style paths.
-    const safe = opts.assPath.replace(/\\/g, "/").replace(/:/g, "\\:");
-    args.push("-vf", `subtitles=${safe}`, "-map", "0:v", "-map", "1:a");
-  } else {
+  const safe = opts.assPath
+    ? opts.assPath.replace(/\\/g, "/").replace(/:/g, "\\:")
+    : null;
+  if (safe) args.push("-vf", `subtitles=${safe}`);
+
+  if (opts.audioPath) {
     args.push("-map", "0:v", "-map", "1:a");
+  } else {
+    // Single input that already has video + (maybe) audio.
+    args.push("-map", "0");
   }
   args.push(
     "-c:v",

@@ -314,7 +314,11 @@ export async function parseDirectorsBrief(args: {
   if (!c) return mockParsedBrief(args);
 
   const productBlock = args.product
-    ? `\n\nA product is attached: "${args.product.name}"${args.product.description ? ` (${args.product.description})` : ""}. The brief should reference this specific product.`
+    ? `\n\nA PRODUCT is attached: "${args.product.name}"${args.product.description ? ` (${args.product.description})` : ""}.
+
+CRITICAL: the user has uploaded reference photos of this exact product, and those photos are the source of truth for what the product looks like. If the brief describes product details (colour, controls, materials, shape) that conflict with what the actual product is, DROP the conflicting details from the visualDirection — do not include them in the output. The brief was likely written generically and the user wants their actual product, not the brief's hypothetical one.
+
+E.g. if the brief says "spins the green dial knob with copper LEDs" but the product is a Black & Decker silver/black blender with push buttons, write visualDirection that references push buttons, not a green dial. The product reference image will make the model render it correctly; conflicting words just create hallucinations.`
     : "";
 
   const resp = await c.messages.create({

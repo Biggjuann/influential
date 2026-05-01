@@ -192,27 +192,29 @@ async function falImage(input: ImageGenInput): Promise<ImageGenOutput> {
     };
   }
 
-  // Multi-image conditioning: both face + product references are present.
-  // Default endpoint is Nano Banana (Gemini 2.5 Flash Image edit) which
-  // composites by reading explicit instructions about which image is which.
-  // We pass image_size + aspect_ratio + num_images broadly so endpoint
-  // swaps via FAL_ENDPOINT_MULTI_REF don't require code changes.
-  if (input.faceReferenceUrl && input.productReferenceUrl) {
+  // Multi-image conditioning: a productReferenceUrl is present, with or
+  // without a face reference. Nano Banana handles "subject + object",
+  // "object alone in scene", or "scene + object" calls cleanly. We pass
+  // image_size + aspect_ratio + num_images broadly so endpoint swaps via
+  // FAL_ENDPOINT_MULTI_REF don't require code changes.
+  if (input.productReferenceUrl) {
     type NanoResult = {
       images?: { url: string; width?: number; height?: number }[];
       image?: { url: string; width?: number; height?: number };
       seed?: number;
     };
+    const imageUrls = input.faceReferenceUrl
+      ? [input.faceReferenceUrl, input.productReferenceUrl]
+      : [input.productReferenceUrl];
     const data = await call<NanoResult>(ENDPOINTS.multiRef, {
       prompt: input.prompt,
-      image_urls: [input.faceReferenceUrl, input.productReferenceUrl],
+      image_urls: imageUrls,
       image_size: { width: size.width, height: size.height },
       aspect_ratio: input.aspectRatio ?? "9:16",
       num_images: count,
       seed: input.seed,
       output_format: "jpeg",
     });
-    // Nano Banana sometimes returns a single { image } instead of { images }.
     const imgs = data.images ?? (data.image ? [data.image] : []);
     if (imgs.length === 0) {
       throw new Error(`multi-ref ${ENDPOINTS.multiRef}: response missing images`);
