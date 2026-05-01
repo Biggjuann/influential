@@ -42,6 +42,9 @@ export type TtsInput = {
   text: string;
   voiceRefUrl?: string;
   voiceDescription?: string;
+  /** Stock voice preset name (e.g. "Rachel"). Falls back to FAL_TTS_VOICE
+   * env var, then "Rachel" hardcoded. Used when no voiceRefUrl clone. */
+  voicePreset?: string;
 };
 
 export type TtsOutput = { audioUrl: string; durationSec: number };

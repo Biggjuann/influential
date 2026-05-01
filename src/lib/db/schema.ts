@@ -114,6 +114,10 @@ export type Persona = {
   negativePrompt: string;
   captionStyle?: CaptionStyleConfig;
   defaultFormat?: Format;
+  /** Default fallback voice (ElevenLabs preset name) when no voiceRefUrl
+   * clone is uploaded. Stored on the persona so each influencer can have a
+   * distinct voice without env-var juggling. */
+  voicePreset?: string;
 };
 
 export const products = pgTable("products", {

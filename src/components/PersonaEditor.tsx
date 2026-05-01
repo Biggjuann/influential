@@ -4,6 +4,7 @@ import { useRouter } from "next/navigation";
 import { Button } from "@/components/Button";
 import type { Persona, CaptionStyleConfig, Format } from "@/lib/db/schema";
 import { AVAILABLE_FONTS } from "@/lib/captionFonts";
+import { VOICE_PRESETS, DEFAULT_VOICE } from "@/lib/voicePresets";
 import { FormatPicker } from "@/components/FormatPicker";
 
 const POSITIONS: { id: "top" | "center" | "bottom"; label: string }[] = [
@@ -236,9 +237,35 @@ export function PersonaEditor({
 
       {/* Voice cloning */}
       <Section
-        title="Voice clone"
-        subtitle="Upload a 10-15s clean clip of someone speaking in this persona's voice. F5-TTS clones the timbre + cadence and uses it for every video and reel."
+        title="Voice"
+        subtitle="Pick a stock voice OR upload a 10-15s clip to clone. The clone wins when both are set."
       >
+        <Field
+          label="Stock voice"
+          hint="Used when no clone is uploaded. ElevenLabs Turbo voices."
+        >
+          <select
+            value={p.voicePreset ?? DEFAULT_VOICE}
+            onChange={(e) => setP({ ...p, voicePreset: e.target.value })}
+            className="w-full h-10 rounded-md border border-border bg-bg px-3 text-sm focus:border-accent outline-none"
+          >
+            <optgroup label="Female">
+              {VOICE_PRESETS.filter((v) => v.gender === "f").map((v) => (
+                <option key={v.id} value={v.id}>
+                  {v.label} — {v.description}
+                </option>
+              ))}
+            </optgroup>
+            <optgroup label="Male">
+              {VOICE_PRESETS.filter((v) => v.gender === "m").map((v) => (
+                <option key={v.id} value={v.id}>
+                  {v.label} — {v.description}
+                </option>
+              ))}
+            </optgroup>
+          </select>
+        </Field>
+
         {voiceRefUrl ? (
           <div className="space-y-2">
             <audio controls src={voiceRefUrl} className="w-full" />
@@ -277,8 +304,8 @@ export function PersonaEditor({
               {voiceBusy ? "Uploading…" : "Upload voice clip"}
             </Button>
             <p className="text-xs text-muted mt-2">
-              MP3, WAV, M4A, WebM, or OGG. ≤ 25 MB. Without a clone, videos use the default
-              ElevenLabs voice (also good but not personalized).
+              MP3, WAV, M4A, WebM, or OGG. ≤ 25 MB. Without a clone, videos use the stock voice
+              picked above.
             </p>
           </div>
         )}

@@ -265,7 +265,9 @@ async function falTts(input: TtsInput): Promise<TtsOutput> {
   // possible param set since different TTS models on fal use different keys
   // (text vs prompt, voice id vs preset name) — extra fields are ignored by
   // each model's pydantic validator. Response shape can also vary.
-  const voice = process.env.FAL_TTS_VOICE ?? "Rachel";
+  // Per-call preset wins; then env var; then hardcoded "Rachel" which is
+  // the best-tested ElevenLabs voice on fal as of our verification.
+  const voice = input.voicePreset?.trim() || process.env.FAL_TTS_VOICE || "Rachel";
   const data = await call<{
     audio?: { url: string; duration?: number };
     audio_url?: string | { url: string };

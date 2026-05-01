@@ -57,6 +57,7 @@ const PersonaPatch = z.object({
   defaultFormat: z
     .enum(["ugc", "tutorial", "unboxing", "product_review", "try_on", "travel", "cinematic"])
     .optional(),
+  voicePreset: z.string().optional(),
 });
 
 const Body = z.object({

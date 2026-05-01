@@ -209,6 +209,7 @@ export async function generateStory(args: {
       text: story.fullScript,
       voiceRefUrl: inf.voiceRefUrl ?? undefined,
       voiceDescription: inf.persona.voiceDescription,
+      voicePreset: inf.persona.voicePreset,
     });
     const audioPath = join(tmp, "voice.wav");
     await materializeToDisk(tts.audioUrl, audioPath);

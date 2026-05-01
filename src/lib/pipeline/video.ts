@@ -177,6 +177,7 @@ export async function generateVideo(args: {
         text: script.spokenLine,
         voiceRefUrl: inf.voiceRefUrl ?? undefined,
         voiceDescription: inf.persona.voiceDescription,
+        voicePreset: inf.persona.voicePreset,
       });
       audioUrl = tts.audioUrl;
     } catch (e) {
